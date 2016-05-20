@@ -9,7 +9,7 @@ from xgboost.sklearn import XGBClassifier
 from xgboost.core import DMatrix
 from xgboost.training import train, cv
 
-def func_cv_1(X, y, folds, model, verbose):
+def func_cv_1(X, y, folds, model, verbose, seed):
     learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = model[0], model[1], model[2], model[3], model[4], model[5], model[6], model[7]
     early_stopping_rounds = 100
     if learning_rate == 0.1:
@@ -19,7 +19,7 @@ def func_cv_1(X, y, folds, model, verbose):
     if learning_rate == 0.01:
         early_stopping_rounds = 100
 
-    clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=5000, objective='binary:logistic', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)      
+    clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=5000, objective='binary:logistic', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha, seed=seed)      
 
     xgb_options = clf.get_xgb_params()
     xgb_options.update({"eval_metric":'auc'})
@@ -60,13 +60,14 @@ def func_predict_1(X, y, X_predict, folds, model, verbose):
 #randomness in kfold. no random seed set in clf
 #best CV so far. the seed doesn't matter much (low variance) and is correct (low bias)
 def my_cv(X, y, n_iterations, n_folds, func_cv, model=None, verbose=True):
+    seed = np.random.randint(10000)
     scores = []
     for i in range(n_iterations):
-        if verbose == True:
-            print('my_cv iteration', i + 1, 'of', n_iterations)
+        #if verbose == True:
+        #    print('my_cv iteration', i + 1, 'of', n_iterations)
 
         folds = StratifiedKFold(y, n_folds=n_folds, shuffle=True)
-        score = func_cv(X, y, folds, model, verbose)
+        score = func_cv(X, y, folds, model, verbose, seed)
         scores.append(score)
 
     scores = np.array(scores)

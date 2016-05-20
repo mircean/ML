@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.24720.0
+VisualStudioVersion = 14.0.25123.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Santander", "Santander.pyproj", "{80A18B4E-98F3-47BC-B665-7D7DA502A51D}"
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Santander", "Santander\Santander.pyproj", "{80A18B4E-98F3-47BC-B665-7D7DA502A51D}"
+EndProject
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Facebook", "Facebook\Facebook.pyproj", "{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,6 +15,8 @@ Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{80A18B4E-98F3-47BC-B665-7D7DA502A51D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{80A18B4E-98F3-47BC-B665-7D7DA502A51D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

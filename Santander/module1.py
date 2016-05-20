@@ -12,6 +12,7 @@ from sklearn.cross_validation import KFold
 from sklearn.cross_validation import StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.metrics import roc_curve, auc, roc_auc_score
+from sklearn.preprocessing import LabelEncoder
 
 import xgboost as xgb
 from xgboost.sklearn import XGBClassifier
@@ -38,7 +39,7 @@ id_test = df_test['ID']
 piv_train = df_train.shape[0]
 
 #Creating a DataFrame with train+test data
-df_all = pd.concat((df_train, df_test), axis=0, ignore_index=True)
+#df_all = pd.concat((df_train, df_test), axis=0, ignore_index=True)
 
 #Feature engineering
 #df_all = feature_engineering(df_all, piv_train)
@@ -62,6 +63,7 @@ cv_1 = 0
 cv_1_rf = 0
 cv_1_ab = 0
 cv_2 = 0
+cv_3 = 0
 submit = 0
 submit_1 = 0
 submit_1_rf = 0
@@ -87,6 +89,8 @@ if sys.argv[1] == 'cv':
         cv_1_rf = 1
     if sys.argv[2] == '1_ab':
         cv_1_ab = 1
+    if sys.argv[2] == '3':
+        cv_3 = 1
 if sys.argv[1] == 'submit':
     if sys.argv[2] == '1':
         submit_1 = 1
@@ -98,8 +102,15 @@ if sys.argv[1] == 'test_force0':
     test_force0 = 1
 
 
+#first try
 #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 6, 0.5, 0.5, 0, 1, 1, 0 
-#learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 6, 0.75, 0.5, 0, 2, 2, 1
+
+#tuning#1 using airbnb method
+#learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.01, 6, 0.75, 0.5, 0, 2, 2, 1
+#try 0.02
+learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.02, 6, 0.75, 0.5, 0, 2, 2, 1
+
+#tuning#2
 #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 6, 0.7, 0.7, 0.5, 10, 1, 0
 #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 5, 0.75, 0.6, 0, 8, 1, 0
 
@@ -107,16 +118,16 @@ if sys.argv[1] == 'test_force0':
 #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.03, 5, 0.8, 0.7, 0, 1, 1, 0
 #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.0202064, 5, 0.6815, 0.701, 0, 1, 1, 0
 
-#tuning
-learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.02, 5, 0.6815, 0.701, 0, 6, 1, 0
+#tuning3
+#learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.02, 5, 0.6815, 0.701, 0, 6, 1, 0
 
 early_stopping_rounds = 100
 if learning_rate == 0.1:
-	early_stopping_rounds = 15
+    early_stopping_rounds = 15
 if learning_rate == 0.03:
-	early_stopping_rounds = 50
+    early_stopping_rounds = 50
 if learning_rate == 0.01:
-	early_stopping_rounds = 100
+    early_stopping_rounds = 100
 
 print(learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha, early_stopping_rounds)
 
@@ -272,6 +283,7 @@ if cv_0 == 1:
 #randomness in kfold. no random seed set in clf
 if cv_1 == 1:
     #np.random.seed(0)
+    #np.random.seed(1234)
     np.random.seed(4242)
 
     n_iterations = 12
@@ -339,6 +351,16 @@ if cv_2 == 1:
 
 	print('mean, std, iterations', np.array(results).mean(), np.array(results).std(), np.array(n_estimators).mean())
 
+if cv_3 == 1:
+    n_iterations = 12
+    n_folds = 10
+
+    def func_cv_local(X, y, folds, model, verbose, seed):
+        score = my_cv(X, y, n_iterations, n_folds, func_cv_1, [learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha])
+        return score
+
+    my_cv(X, y, n_iterations, n_folds, func_cv_local, [learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha])
+
 #weakness - same number of trees for all models
 #weakness - not much variance when changing the clf random seed (see cv_2, too)
 if submit == 1:
@@ -388,10 +410,11 @@ if submit == 1:
 #create 12 modelds, train each one, find best number of trees in cv, fit each model. a bit better than sumbit
 if submit_1 == 1:
     #np.random.seed(0)
-    np.random.seed(4242)
+    np.random.seed(1234)
+    #np.random.seed(4242)
     #randomness in kfold. no random seed set in clf
 
-    n_iterations = 5
+    n_iterations = 12
     n_folds = 10
 
     scores = my_predict(X, y, X_predict, n_iterations, n_folds, func_predict_1, [learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha])

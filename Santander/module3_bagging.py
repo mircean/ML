@@ -61,12 +61,12 @@ models.append([0.005, 5, 0.6815, 0.701, 0, 6, 1, 0])
 n_iterations_outer = 12
 n_folds_outer = 10
 
-n_iterations_inner = 5
+n_iterations_inner = 1
 n_folds_inner = 10
 
 np.random.seed(4242)
 
-def func_cv_2(X, y, folds, model, verbose):
+def func_cv_2(X, y, folds, model, verbose, seed):
     scores = []
     for train, test in folds:
         print('**func_cv_2 Fold', 1 + len(scores), 'of', n_folds_outer)
