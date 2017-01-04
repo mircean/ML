@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{c665ed41-adf1-4f5d-aef1-6d9a242c74a0}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>module3_python_v2.py</StartupFile>
+    <SearchPath>..\..\..\..\..\..\Anaconda3\</SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId />
+    <InterpreterVersion />
+    <Name>Airbnb</Name>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+    <PtvsTargetsFile>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets</PtvsTargetsFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="module1_azure.py" />
+    <Compile Include="module2_python_v1.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="module3_python_v2.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="module4_remove_sessions.py" />
+    <Compile Include="module4_remove_sessions_1.py" />
+    <Compile Include="module5_add_sessions.py" />
+    <Compile Include="module6_boost_cv.py" />
+    <Compile Include="module6_boost_test.py" />
+    <Compile Include="module7_boost_submit.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="module8_boost_2models.py" />
+    <Compile Include="module9_boost_2models.py" />
+  </ItemGroup>
+  <Import Project="$(PtvsTargetsFile)" Condition="Exists($(PtvsTargetsFile))" />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" Condition="!Exists($(PtvsTargetsFile))" />
+</Project>
