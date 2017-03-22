@@ -46,8 +46,13 @@ def cleaning_text(text):
     text = text.strip()
     return text
 
+def cleaning_text2(text):
+    text = re.sub('[^\w\s]',' ', text) #removes punctuations
+    text = text.strip()
+    return text
+
 def cleaning_list(list):
-    return [cleaning_text(x.lower()) for x in list]
+    return [cleaning_text2(x) for x in list]
     #return map(cleaning_text, list)
 
 def feature_engineering(df_train, df_test, y_train):
@@ -128,6 +133,7 @@ def feature_engineering(df_train, df_test, y_train):
     df_all["room_sum"] = df_all["bedrooms"] + df_all["bathrooms"] 
     df_all["price_per_room"] = df_all["price"]/df_all["room_sum"]
 
+    #replace np.inf
     df_all.loc[df_all.price_per_bed == np.inf, 'price_per_bed'] = 10000000
     df_all.loc[df_all.price_per_room == np.inf, 'price_per_room'] = 10000000
 
@@ -178,7 +184,6 @@ def feature_engineering(df_train, df_test, y_train):
     n_features = 2000
     df_all['features'] = df_all['features'].apply(lambda x: cleaning_list(x))
     df_all['features'] = df_all['features'].apply(lambda x: " ".join(["_".join(i.split(" ")) for i in x]))
-    df_all['features'] = df_all['features'].apply(lambda x: x.lower())
     tfidf = CountVectorizer(stop_words='english', max_features=n_features)
     tr_sparse = tfidf.fit_transform(df_all[:df_train.shape[0]]['features'])
     te_sparse = tfidf.transform(df_all[df_train.shape[0]:]['features'])
@@ -234,7 +239,7 @@ def feature_engineering(df_train, df_test, y_train):
     X_test = df_all[df_train.shape[0]:]
 
     X_train = pd.concat((X_train, pd.DataFrame(tr_sparse.todense())), axis=1)
-    X_test = pd.concat((X_test, pd.DataFrame(te_sparse.todense())), axis=1)
+    X_test = pd.concat((X_test, pd.DataFrame(te_sparse.todense(), index=X_test.index)), axis=1)
 
     #X_train = csr_matrix(np.hstack([X_train, tr_sparse.todense()]))
     #X_test = csr_matrix(np.hstack([X_test, te_sparse.todense()]))
@@ -256,66 +261,54 @@ def feature_engineering_extra(df_train, df_test, y_train):
     temp['manager_skill'] = temp['high_frac']*2 + temp['medium_frac']
     #lower the rating for fewer listings
     #temp['manager_skill'] = temp.manager_skill*expit((temp.manager_listings - 1)/4)
-    #temp['manager_skill'] = temp.manager_skill*expit(temp.manager_listings/4)
 
     #use mean for managers with < 20 listings in train. TBD: explain why
     unranked_managers_ixes = temp['manager_listings'] < 20
     ranked_managers_ixes = ~unranked_managers_ixes
     mean_values = temp.loc[ranked_managers_ixes, ['high_frac', 'medium_frac', 'low_frac', 'manager_skill']].mean()
     temp.loc[unranked_managers_ixes, ['high_frac', 'medium_frac', 'low_frac', 'manager_skill']] = mean_values.values
-
+    
     temp = temp['manager_skill']
     
     #join
     df_train = df_train.merge(temp.reset_index(), how='left', left_on='manager_id', right_on='manager_id')
-    #manager with no listing - give them default 0.5 rating
-    #df_all2 = df_all2.fillna(0.5)
-    #df_all2 = df_all2.fillna(0)
-    
-    #remove manager_id - score is worse
-    #df_train = df_train.drop(['manager_id'], axis=1)    
-       
-    #join
     df_test = df_test.merge(temp.reset_index(), how='left', left_on='manager_id', right_on='manager_id')
     #manager with no listing - give them default 0.5 rating
-    #df_all2 = df_all2.fillna(0.5)
-    #df_all2 = df_all2.fillna(0)
     #use mean for managers with no listings. TBD: explain why
     new_manager_ixes = df_test['manager_skill'].isnull()
     df_test.loc[new_manager_ixes, 'manager_skill'] = mean_values['manager_skill']
+    #df_test.loc[new_manager_ixes, 'manager_skill'] = 0.5
         
     #remove manager_id - score is worse
+    #df_train = df_train.drop(['manager_id'], axis=1)    
     #df_test = df_test.drop(['manager_id'], axis=1)    
-        
-    '''
-    temp = pd.concat([df_all[:df_train.shape[0]].building_id, pd.get_dummies(y_train)], axis = 1).groupby('building_id').mean()
-    temp.columns = ['high_frac', 'low_frac', 'medium_frac']
+
+    '''        
+    temp = pd.concat([df_train.building_id, pd.get_dummies(y_train)], axis = 1).groupby('building_id').mean()
+    temp.columns = ['high_frac', 'medium_frac', 'low_frac']
     #this is equivalent of number of reviews
-    temp['building_listings'] = df_all[:df_train.shape[0]].groupby('building_id').count().iloc[:,1]
+    temp['building_listings'] = df_train.groupby('building_id').count().iloc[:,1]
     #this is equivalent to star rating (0, 1 or 2 stars)
     temp['building_skill'] = temp['high_frac']*2 + temp['medium_frac']
     #lower the rating for fewer listings
-    #temp['building_skill'] = temp.building_skill*expit((temp.building_listings - 1)/4)
-    #temp['building_skill'] = temp.building_skill*expit(temp.building_listings/4)
+    temp['building_skill'] = temp.building_skill*expit((temp.building_listings - 1)/4)
         
     #use mean for buildings with < 20 listings in train. TBD: explain why
-    unranked_managers_ixes = temp['building_listings'] < 20
-    ranked_managers_ixes = ~unranked_managers_ixes
-    mean_values = temp.loc[ranked_managers_ixes, ['high_frac','low_frac', 'medium_frac','building_skill']].mean()
-    temp.loc[unranked_managers_ixes,['high_frac','low_frac', 'medium_frac','building_skill']] = mean_values.values
+    #unranked_managers_ixes = temp['building_listings'] < 10
+    #ranked_managers_ixes = ~unranked_managers_ixes
+    #mean_values = temp.loc[ranked_managers_ixes, ['high_frac', 'medium_frac', 'low_frac', 'building_skill']].mean()
+    #temp.loc[unranked_managers_ixes, ['high_frac', 'medium_frac', 'low_frac','building_skill']] = mean_values.values
 
     temp = temp['building_skill']
-    #join
-    df_all2 = df_all.merge(temp.reset_index(), how='left', left_on='building_id', right_on='building_id')
-    #building with no listing - give them default 0.5 rating
-    #df_all2 = df_all2.fillna(0.5)
-    #df_all2 = df_all2.fillna(0)
-    #use mean for buidlings with no listings. TBD: explain why
-    df_all2 = df_all2.fillna(mean_values['building_skill'])
-    df_all['building_skill'] = df_all2['building_skill']
 
-    #remove building_id?
-    #df_all = df_all.drop(['building_id'], axis=1)    
+    #join
+    df_train = df_train.merge(temp.reset_index(), how='left', left_on='building_id', right_on='building_id')
+    df_test = df_test.merge(temp.reset_index(), how='left', left_on='building_id', right_on='building_id')
+    #manager with no listing - give them default 0.5 rating
+    #use mean for managers with no listings. TBD: explain why
+    new_manager_ixes = df_test['building_skill'].isnull()
+    #df_test.loc[new_manager_ixes, 'building_skill'] = mean_values['building_skill']
+    df_test.loc[new_manager_ixes, 'building_skill'] = 0.5
     '''
 
     return df_train, df_test
@@ -345,10 +338,20 @@ def my_find_n_estimators(clf, X_train, y_train, n_estimators):
 
     return cv_results.values[-1][0], cv_results['test-mlogloss-mean'].values
 
+def my_train(clf, X_train, y_train, n_estimators):
+    xgb_options = clf.get_xgb_params()
+    xgb_options['num_class'] = 3
+    xgb_options.update({"eval_metric":'mlogloss'})
+    train_dmatrix = DMatrix(csr_matrix(X_train), label=y_train)
+
+    train(xgb_options, train_dmatrix, n_estimators)
+
 is_tt = 0
 is_tt_rf = 0
 is_cv = 0
 is_gs = 0
+is_gs1 = 0
+is_find_n_tt = 0
 is_find_n = 0
 is_submit = 0
 if __name__ == '__main__':
@@ -364,9 +367,15 @@ if __name__ == '__main__':
     elif sys.argv[1] == 'gs':
         print('is_gs')
         is_gs = 1
+    elif sys.argv[1] == 'gs1':
+        print('is_gs1')
+        is_gs1 = 1
     elif sys.argv[1] == 'find_n':
         print('is_find_n')
         is_find_n = 1
+    elif sys.argv[1] == 'find_n_tt':
+        print('is_find_n_tt')
+        is_find_n_tt = 1
     elif sys.argv[1] == 'submit':
         print('is_submit')
         is_submit = 1
@@ -392,8 +401,9 @@ if __name__ == '__main__':
         X_train, X_test = feature_engineering(df_train, df_test, y_train)
     
         early_stopping_rounds = 100
-        #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
-        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 4, 0.8, 0.8, 0, 1, 1, 0
+        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
+        #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 4, 0.8, 0.8, 0, 1, 1, 0
+        #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 5, 0.85, 0.6, 3, 3, 1, 0
         clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=5000, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
 
         scores2 = []
@@ -471,11 +481,49 @@ if __name__ == '__main__':
         scores = np.delete(scores, [scores.argmax(), scores.argmin()])
         print('my_cv mean, std', scores.mean(), scores.std())
 
+    if is_find_n_tt == 1:
+        X_train, X_test = feature_engineering(df_train, df_test, y_train)
+    
+        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
+        n_estimators = 500
+        #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 4, 0.8, 0.8, 0, 1, 1, 0
+        #n_estimators = 1200
+        clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=n_estimators, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+
+        n_folds = 5
+        n_iterations = 10
+        df = pd.DataFrame()
+        for i in range(n_iterations):
+            folds = StratifiedKFold(y_train, n_folds=n_folds, shuffle=True)
+            j = 0
+            for train_index, test_index in folds:
+                print(str(i)+str(j))
+                X_train2, X_test2 = X_train.loc[train_index], X_train.loc[test_index]
+                y_train2, y_test2 = y_train[train_index], y_train[test_index]
+
+                X_train2, X_test2 = feature_engineering_extra(X_train2, X_test2, y_train2)
+
+                X_train2 = csr_matrix(X_train2.values)
+                X_test2 = csr_matrix(X_test2.values)
+
+                clf.fit(X_train2, y_train2, eval_set=[(X_test2, y_test2)], eval_metric='mlogloss', verbose=False)
+        
+                df['column' + str(i)+str(j)] = clf.evals_result()['validation_0']['mlogloss']
+                df['column' + str(i)+str(j)] = df['column' + str(i)+str(j)].astype(float)
+                j = j + 1
+
+        print('score', df.sum(axis=1).min()/(n_iterations*n_folds))
+        print('iteration', df.sum(axis=1).argmin() + 1)
+
+        #print(df.sum(axis=1)/(n_iterations*n_folds))
+        for i in df.sum(axis=1)/(n_iterations*n_folds):
+            print(i)
+
     if is_find_n == 1:
         X_train, X_test = feature_engineering(df_train, df_test, y_train)
     
-        #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
-        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 4, 0.8, 0.8, 0, 1, 1, 0
+        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
+        #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 4, 0.8, 0.8, 0, 1, 1, 0
         clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=5000, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
     
         df = pd.DataFrame()
@@ -484,7 +532,7 @@ if __name__ == '__main__':
             print('iteration', i, 'score', score)
             df['column' + str(i)] = results
 
-        print('score', df.sum(axis=1).min()/10)
+        print('score', df.sum(axis=1).min()/50)
         print('iteration', df.sum(axis=1).argmin() + 1)
 
     if is_gs == 1:
@@ -513,18 +561,72 @@ if __name__ == '__main__':
         for i in range(len(scores_out)):
             print(scores_out[i])
 
+    if is_gs1 == 1:
+        early_stopping_rounds = 200
+        X_train, X_test = feature_engineering(df_train, df_test, y_train)
+        #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
+        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 5, 0.85, 0.6, 3, 3, 1, 0
+        
+        for learning_rate in [0.01]:
+            clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=20000, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+
+            np.random.seed(0)
+
+            scores2 = []
+            for i in range(10):
+                folds = StratifiedKFold(y_train, n_folds=5, shuffle=True)
+                scores = []
+                iterations = []
+                for train_index, test_index in folds:
+                    X_train2, X_test2 = X_train.loc[train_index], X_train.loc[test_index]
+                    y_train2, y_test2 = y_train[train_index], y_train[test_index]
+
+                    X_train2, X_test2 = feature_engineering_extra(X_train2, X_test2, y_train2)
+
+                    X_train2 = csr_matrix(X_train2.values)
+                    X_test2 = csr_matrix(X_test2.values)
+
+                    clf.fit(X_train2, y_train2, eval_set=[(X_test2, y_test2)], eval_metric='mlogloss', early_stopping_rounds=early_stopping_rounds, verbose=False)
+                    #print(round(clf.booster().best_score, 6), int(clf.booster().best_ntree_limit))
+                    scores.append(round(clf.booster().best_score, 6))
+                    iterations.append(int(clf.booster().best_ntree_limit))
+
+                scores = np.array(scores)
+                iterations = np.array(iterations)
+                score = scores.mean()
+                scores2.append(score)
+                ##
+                print('score, std, iterations', score, scores.std(), iterations.mean())
+
+            scores = np.array(scores2)
+            scores = np.delete(scores, [scores.argmax(), scores.argmin()])
+            print(learning_rate, scores.mean(), scores.std())
+
     if is_submit == 1:    
         X_train, X_test = feature_engineering(df_train, df_test, y_train)
+        X_train, X_test = feature_engineering_extra(X_train, X_test, y_train)
 
-        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
+        X_train = csr_matrix(X_train.values)
+        X_test = csr_matrix(X_test.values)
+
+        #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
         #clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=351, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
-        clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=328, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+        #clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=328, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+        #clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=344, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
 
         #learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 4, 0.8, 0.8, 0, 1, 1, 0
         #clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=862, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+        #clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=1000, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+        #clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=965, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+        #clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=823, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
 
-        clf.fit(csr_matrix(X_train), y_train)
-        y_predict = clf.predict_proba(csr_matrix(X_test))
+        n_estimators = 12000
+        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.01, 5, 0.85, 0.6, 3, 3, 1, 0
+        clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=n_estimators, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+
+        clf.fit(X_train, y_train)
+        y_predict = clf.predict_proba(X_test)
+
         df_out = pd.DataFrame(y_predict)
         df_out.columns = ["high", "medium", "low"]
         df_out["listing_id"] = df_test.listing_id.values
