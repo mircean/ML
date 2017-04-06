@@ -348,12 +348,15 @@ def my_train(clf, X_train, y_train, n_estimators):
 
 is_tt = 0
 is_tt_rf = 0
+is_tt_rf_1 = 0
+is_tt_xgb_rf = 0
 is_cv = 0
 is_gs = 0
 is_gs1 = 0
 is_find_n_tt = 0
 is_find_n = 0
 is_submit = 0
+is_submit_rf = 0
 if __name__ == '__main__':
     if sys.argv[1] == 'tt':
         print('is_tt')
@@ -361,6 +364,9 @@ if __name__ == '__main__':
     elif sys.argv[1] == 'tt_rf':
         print('is_tt_rf')
         is_tt_rf = 1
+    elif sys.argv[1] == 'tt_xgb_rf':
+        print('is_tt_xgb_rf')
+        is_tt_xgb_rf = 1
     elif sys.argv[1] == 'cv':
         print('is_cv')
         is_cv = 1
@@ -379,6 +385,9 @@ if __name__ == '__main__':
     elif sys.argv[1] == 'submit':
         print('is_submit')
         is_submit = 1
+    elif sys.argv[1] == 'submit_rf':
+        print('is_submit')
+        is_submit_rf = 1
     else:
         abc += 1
 
@@ -438,7 +447,7 @@ if __name__ == '__main__':
     if is_tt_rf == 1:
         X_train, X_test = feature_engineering(df_train, df_test, y_train)
     
-        clf = RandomForestClassifier(n_estimators=1000, n_jobs=-1)
+        clf = RandomForestClassifier(n_estimators=5000, n_jobs=-1)
 
         scores2 = []
         for i in range(10):
@@ -450,9 +459,115 @@ if __name__ == '__main__':
 
                 X_train2, X_test2 = feature_engineering_extra(X_train2, X_test2, y_train2)
 
+                X_train2 = csr_matrix(X_train2.values)
+                X_test2 = csr_matrix(X_test2.values)
+
                 clf.fit(X_train2, y_train2)
                 y_pred = clf.predict_proba(X_test2)
                 score = log_loss(y_test2, y_pred)
+                scores.append(round(score, 6))
+
+            scores = np.array(scores)
+            score = scores.mean()
+            scores2.append(score)
+            print('score, std', score, scores.std())
+
+        scores = np.array(scores2)
+        scores = np.delete(scores, [scores.argmax(), scores.argmin()])
+        print('score, std', scores.mean(), scores.std())
+
+    if is_tt_rf_1 == 1:
+        X_train, X_test = feature_engineering(df_train, df_test, y_train)
+    
+        scores2 = []
+        for i in range(10):
+            folds = StratifiedKFold(y_train, n_folds=5, shuffle=True)
+            scores = []
+            iterations = []
+            for train_index, test_index in folds:
+                #has to be created here because warm start
+                clf = RandomForestClassifier(n_estimators=10, warm_start=True, n_jobs=-1)
+
+                X_train2, X_test2 = X_train.loc[train_index], X_train.loc[test_index]
+                y_train2, y_test2 = y_train[train_index], y_train[test_index]
+
+                X_train2, X_test2 = feature_engineering_extra(X_train2, X_test2, y_train2)
+
+                X_train2 = csr_matrix(X_train2.values)
+                X_test2 = csr_matrix(X_test2.values)
+
+                score = 100
+                iteration = 0
+                for i in range(1000):
+                    clf.n_estimators = 10*(i+1)
+                    clf.fit(X_train2, y_train2)
+                    y_pred = clf.predict_proba(X_test2)
+                    score_tmp = log_loss(y_test2, y_pred)
+                    if score_tmp < score:
+                        score = score_tmp
+                        iteration = i
+                    if i > iteration + 100:
+                        break
+
+                print(score, clf.n_estimators)
+                scores.append(round(score, 6))
+                iterations.append(clf.n_estimators)
+
+            scores = np.array(scores)
+            iterations = np.array(iterations)
+            score = scores.mean()
+            scores2.append(score)
+            print('score, std, iterations', score, scores.std(), iterations.mean())
+
+        scores = np.array(scores2)
+        scores = np.delete(scores, [scores.argmax(), scores.argmin()])
+        print('score, std', scores.mean(), scores.std())
+
+    if is_tt_xgb_rf == 1:
+        X_train, X_test = feature_engineering(df_train, df_test, y_train)
+    
+        learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.1, 6, 0.7, 0.7, 0, 1, 1, 0
+        clf1 = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=342, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+        clf2 = RandomForestClassifier(n_estimators=1000, n_jobs=-1)
+
+        scores2 = []
+        for i in range(10):
+            folds = StratifiedKFold(y_train, n_folds=5, shuffle=True)
+            scores = []
+            for train_index, test_index in folds:
+                X_train2, X_test2 = X_train.loc[train_index], X_train.loc[test_index]
+                y_train2, y_test2 = y_train[train_index], y_train[test_index]
+                
+                X_train2, X_test2 = feature_engineering_extra(X_train2, X_test2, y_train2)
+
+                X_train2 = csr_matrix(X_train2.values)
+                X_test2 = csr_matrix(X_test2.values)
+
+                clf1.fit(X_train2, y_train2)
+                y_pred1 = clf1.predict_proba(X_test2)
+                score1 = log_loss(y_test2, y_pred1)
+                score1 = round(score1, 6)
+
+                clf2.fit(X_train2, y_train2)
+                y_pred2 = clf2.predict_proba(X_test2)
+                score2 = log_loss(y_test2, y_pred2)
+                score2 = round(score2, 6)
+
+                inner_scores = []
+    
+                '''
+                for i in range(95, 45, -5):
+                    y_pred = y_pred1*i/100 + y_pred2*(100-i)/100
+                    score = log_loss(y_test2, y_pred)
+                    score = round(score, 6)
+                    inner_scores.append(score)
+                
+                print(score1, score2, ', '.join(np.array(inner_scores).astype(str)))
+                '''
+                rf_procentage = 10
+                y_pred = y_pred1*(100 - rf_procentage)/100 + y_pred2*rf_procentage/100
+                score = log_loss(y_test2, y_pred)
+                score = round(score, 6)
                 scores.append(round(score, 6))
 
             scores = np.array(scores)
@@ -623,6 +738,23 @@ if __name__ == '__main__':
         n_estimators = 12000
         learning_rate, max_depth, ss, cs, gamma, min_child_weight, reg_lambda, reg_alpha = 0.01, 5, 0.85, 0.6, 3, 3, 1, 0
         clf = XGBClassifier(max_depth=max_depth, learning_rate=learning_rate, n_estimators=n_estimators, objective='multi:softprob', subsample=ss, colsample_bytree=cs, gamma=gamma, min_child_weight=min_child_weight, reg_lambda=reg_lambda, reg_alpha=reg_alpha)
+
+        clf.fit(X_train, y_train)
+        y_predict = clf.predict_proba(X_test)
+
+        df_out = pd.DataFrame(y_predict)
+        df_out.columns = ["high", "medium", "low"]
+        df_out["listing_id"] = df_test.listing_id.values
+        df_out.to_csv("Output/results.csv", index=False)
+
+    if is_submit_rf == 1:    
+        X_train, X_test = feature_engineering(df_train, df_test, y_train)
+        X_train, X_test = feature_engineering_extra(X_train, X_test, y_train)
+
+        X_train = csr_matrix(X_train.values)
+        X_test = csr_matrix(X_test.values)
+
+        clf = RandomForestClassifier(n_estimators=5000, n_jobs=-1)
 
         clf.fit(X_train, y_train)
         y_predict = clf.predict_proba(X_test)
