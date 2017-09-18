@@ -6,7 +6,7 @@
     <ProjectGuid>{c665ed41-adf1-4f5d-aef1-6d9a242c74a0}</ProjectGuid>
     <ProjectHome />
     <StartupFile>module3_python_v2.py</StartupFile>
-    <SearchPath>..\..\..\..\..\..\Anaconda3\</SearchPath>
+    <SearchPath>..\..\..\..\..\Anaconda3\</SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
     <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
@@ -19,7 +19,6 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
   <PropertyGroup>
     <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
-    <PtvsTargetsFile>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets</PtvsTargetsFile>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="module1_azure.py" />
@@ -40,6 +39,5 @@
     <Compile Include="module8_boost_2models.py" />
     <Compile Include="module9_boost_2models.py" />
   </ItemGroup>
-  <Import Project="$(PtvsTargetsFile)" Condition="Exists($(PtvsTargetsFile))" />
-  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" Condition="!Exists($(PtvsTargetsFile))" />
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
 </Project>

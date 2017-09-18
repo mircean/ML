@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25123.0
+# Visual Studio 15
+VisualStudioVersion = 15.0.26430.16
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Santander", "Santander\Santander.pyproj", "{80A18B4E-98F3-47BC-B665-7D7DA502A51D}"
 EndProject
@@ -10,6 +10,8 @@ EndProject
 Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Airbnb", "Airbnb\Airbnb.pyproj", "{C665ED41-ADF1-4F5D-AEF1-6D9A242C74A0}"
 EndProject
 Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "TwoSigma", "TwoSigma\TwoSigma.pyproj", "{64D3656F-EC30-479E-9F96-A9510B080B9C}"
+EndProject
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "DNN", "DeepLearning\DNN.pyproj", "{A5B814B1-4578-4826-8792-8C6BF6F88102}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -25,6 +27,8 @@ Global
 		{C665ED41-ADF1-4F5D-AEF1-6D9A242C74A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{64D3656F-EC30-479E-9F96-A9510B080B9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{64D3656F-EC30-479E-9F96-A9510B080B9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A5B814B1-4578-4826-8792-8C6BF6F88102}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A5B814B1-4578-4826-8792-8C6BF6F88102}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
