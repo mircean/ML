@@ -4,7 +4,6 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import accuracy_score
 
 '''
-
 binary classification
     [linear->activation]->[linear->activation]->...->[linear->sigmoid]
     activation: tanh, relu
@@ -19,17 +18,6 @@ regression
     [linear->activation]->[linear->activation]->...->[linear->identity]
     activation: tanh, relu
     Loss: MSRE
-
-Hyper parameters
-* number of hidden layers, number of nodes
-* parameters initialization (uniform random, normal random, etc.)
-    big difference in Titanic/Keras
-* activation functions
-* learning rate
-
-Fixed parameters
-* loss function
-
 '''
 
 ###
@@ -38,18 +26,22 @@ Fixed parameters
 ###
 
 #
-#activation functions
+#activation functions, hidden layers
+#
+def relu(Z):
+    A = np.maximum(0, Z)
+    assert(A.shape == Z.shape)
+    return A
+#
+#activation functions, output leyer
 #
 def identity(Z):
     return Z
 
 def sigmoid(Z):
+    #numeric stability. a = 1/(1+np.exp(-37)) = 1.0 then log(1-a) in binary_crossentropy is infinite
+    Z[Z > 32] = 32
     A = 1/(1 + np.exp(-Z))
-    return A
-
-def relu(Z):
-    A = np.maximum(0, Z)
-    assert(A.shape == Z.shape)
     return A
 
 def softmax(Z):
@@ -58,12 +50,10 @@ def softmax(Z):
 #
 #cost functions
 #
-
 def binary_crossentropy(AL, Y):
     m = Y.shape[1] # number of examples
     logprobs = np.multiply(np.log(AL), Y) + np.multiply(np.log(1 - AL), (1 - Y))
     cost = -np.sum(logprobs)/m
-    cost = np.squeeze(cost)  # makes sure cost is the dimension we expect, e.g. turns [[17]] into 17 
     assert(isinstance(cost, float))
     return cost
 
@@ -84,11 +74,11 @@ class DNN:
     '''
     L = number of layers
     n = number of nodes in each layer. array[L + 1]
-    W, b = parameters. array[L + 1], 0 not used
+    W, b = parameters. array[L + 1], W[0], b[0] not used
     activations = activation functions. array[L + 1], 0 not used
     costfunction = the cost(loss) function
     init = parameters initalization method
-
+    optimizer = ('GD', beta(momentum)=0.9), ('RMSProp', beta=0.9), ('Adam', beta1=0.9, beta2=0.999, epsilon=1e-8)
     lambd = regularization factor. global for now, can be defined per layer
     '''
     def __init__(self):
@@ -96,9 +86,14 @@ class DNN:
         self.n = None
         self.W = None
         self.b = None
+        self.vdW = None
+        self.vdb = None
+        self.sdW = None
+        self.sdb = None
         self.activations = None
         self.costfunction = None
         self.init = 'RandomNormal'
+        self.optimizer = 'GD'
         self.lambd = 0
         
     def add_input_layer(self, node_count):
@@ -114,32 +109,33 @@ class DNN:
         self.activations.append(activation)
 
     def compile(self):
-        '''
-        Checks the member variables
-        '''
-        if self.L < 2:
-            raise ValueError('L')
-        if self.n == None or len(self.n) != self.L + 1:
-            raise ValueError('n')
-        if self.activations == None or len(self.activations) != self.L + 1:
-            raise ValueError('activations')
-        if self.costfunction == None:
-            raise ValueError('costfunction')
+        assert(self.L >= 2)
+        assert(self.n != None and len(self.n) == self.L + 1)
+        assert(self.activations != None and len(self.activations) == self.L + 1)
+        assert(self.costfunction != None)
         assert(self.costfunction.__name__ in ['binary_crossentropy', 'categorical_crossentropy', 'mean_squared_error'])
-        if self.lambd < 0 or self.lambd >= 1:
-            raise ValueError('costfunction')
+        if self.optimizer == 'GD':
+            self.optimizer = ('GD', 0.9)
+        if self.optimizer == 'RMSProp':
+            self.optimizer = ('RMSProp', 0.9)
+        if self.optimizer == 'Adam':
+            self.optimizer = ('Adam', 0.9, 0.999, 1e-8)
+        assert(self.optimizer[0] in ['GD', 'RMSProp', 'Adam'])
+
+        assert(self.lambd >= 0 and self.lambd < 1)
 
         self.__initialize_parameters()
 
     def __initialize_parameters(self):
         '''
-        Initializes parameters W and b
+        Initializes parameters W, b, v*, s*
         '''
-        self.W = []
-        self.b = []
-        
-        self.W.append(None)
-        self.b.append(None)
+        self.W = [None]
+        self.b = [None]
+        self.vdW = [None]
+        self.vdb = [None]
+        self.sdW = [None]
+        self.sdb = [None]
 
         for i in range(1, self.L + 1):
             if self.init == 'RandomNormal':
@@ -155,12 +151,19 @@ class DNN:
             else:
                 raise ValueError('init')
 
-            bi = np.zeros((self.n[i], 1))
             self.W.append(Wi)
-            self.b.append(bi)
+            self.b.append(np.zeros((self.n[i], 1)))
+
+            if self.optimizer[0] == 'GD' or self.optimizer[0] == 'Adam':
+                self.vdW.append(np.zeros((self.n[i], self.n[i - 1])))
+                self.vdb.append(np.zeros((self.n[i], 1)))
+
+            if self.optimizer[0] == 'RMSProp' or self.optimizer[0] == 'Adam':
+                self.sdW.append(np.zeros((self.n[i], self.n[i - 1])))
+                self.sdb.append(np.zeros((self.n[i], 1)))
 
     def __forward_propagation(self, X):
-        """
+        '''
         Forward propagation
         
         Argument:
@@ -169,7 +172,7 @@ class DNN:
         Returns:
         A -- The output of the last activation
         cache -- a list that contains (Z[i], A[i]) for i in 0..L
-        """
+        '''
 
         cache = [(None, X)]
         A = X
@@ -185,14 +188,12 @@ class DNN:
         m = Y.shape[1]
 
         cost = self.costfunction(A, Y)
-        #for i in range(1, self.L + 1):
-        #    cost += self.lambd/m/2*np.sum(np.square(self.W[i]))
         cost += self.lambd/m/2*np.sum([np.sum(np.square(x)) for x in self.W[1:]])
 
         return cost
 
     def __backward_propagation(self, cache, X, Y):
-        """
+        '''
         Implement the backward propagation.
 
         Arguments:
@@ -202,7 +203,7 @@ class DNN:
 
         Returns:
         grads -- list of gradients(dW[i], db[i]) for i in 0..L
-        """
+        '''
         m = X.shape[1]
 
         grads = []
@@ -244,14 +245,47 @@ class DNN:
         grads.append((None, None))
         return list(reversed(grads))
 
-    def __update_parameters(self, grads, learning_rate):
+    def __update_parameters(self, grads, learning_rate, t):
         '''
         Update parameters
         '''
         for i in range(1, self.L + 1):
             dW, db = grads[i]
-            self.W[i] -= learning_rate*dW
-            self.b[i] -= learning_rate*db
+        
+            if self.optimizer[0] == 'GD':
+                beta = self.optimizer[1]
+
+                self.vdW[i] = beta*self.vdW[i] + (1-beta)*dW
+                self.vdb[i] = beta*self.vdb[i] + (1-beta)*db
+
+                self.W[i] -= learning_rate*self.vdW[i]
+                self.b[i] -= learning_rate*self.vdb[i]
+            elif self.optimizer[0] == 'RMSProp':
+                beta = self.optimizer[1]
+                epsilon = 1e-8
+
+                self.sdW[i] = beta*self.sdW[i] + (1-beta)*dW*dW
+                self.sdb[i] = beta*self.sdb[i] + (1-beta)*db*db
+
+                self.W[i] -= learning_rate*dW/np.sqrt(self.sdW[i] + epsilon)
+                self.b[i] -= learning_rate*db/np.sqrt(self.sdb[i] + epsilon)
+            elif self.optimizer[0] == 'Adam':
+                beta1, beta2, epsilon = self.optimizer[1], self.optimizer[2], self.optimizer[3] 
+
+                self.vdW[i] = beta1*self.vdW[i] + (1-beta1)*dW
+                self.vdb[i] = beta1*self.vdb[i] + (1-beta1)*db
+
+                vdW_corrected = self.vdW[i]/(1-pow(beta1, t))
+                vdb_corrected = self.vdb[i]/(1-pow(beta1, t))
+
+                self.sdW[i] = beta2*self.sdW[i] + (1-beta2)*dW*dW
+                self.sdb[i] = beta2*self.sdb[i] + (1-beta2)*db*db
+
+                sdW_corrected = self.sdW[i]/(1-pow(beta2, t))
+                sdb_corrected = self.sdb[i]/(1-pow(beta2, t))
+
+                self.W[i] -= learning_rate*vdW_corrected/np.sqrt(sdW_corrected + epsilon)
+                self.b[i] -= learning_rate*vdb_corrected/np.sqrt(sdb_corrected + epsilon)
             
     def __weights_to_array(self, grads):
         num_parameters = 0
@@ -321,7 +355,7 @@ class DNN:
 
     @staticmethod
     def __create_mini_batches(X, Y, batch_size = 64):
-        """
+        '''
         Creates a list of random minibatches from (X, Y)
     
         Arguments:
@@ -331,10 +365,9 @@ class DNN:
     
         Returns:
         mini_batches -- list of synchronous (mini_batch_X, mini_batch_Y)
-        """
+        '''
     
-        # number of training examples
-        m = X.shape[1]                  
+        m = X.shape[1]  #number of training examples
         mini_batches = []
         
         # Step 1: Shuffle (X, Y)
@@ -343,7 +376,7 @@ class DNN:
         shuffled_Y = Y[:, permutation]#.reshape((1,m))
 
         # Step 2: Partition (shuffled_X, shuffled_Y). Minus the end case.
-        num_complete_minibatches = math.floor(m/batch_size) # number of mini batches of size batch_size in your partitionning
+        num_complete_minibatches = math.floor(m/batch_size) # number of mini batches of size batch_size
         for k in range(0, num_complete_minibatches):
             mini_batch_X = shuffled_X[:, k*batch_size : (k+1)*batch_size]
             mini_batch_Y = shuffled_Y[:, k*batch_size : (k+1)*batch_size]
@@ -359,22 +392,20 @@ class DNN:
     
         return mini_batches
 
-    def fit(self, X, Y, eval_set=None, eval_metric='error', learning_rate=0.1, num_iterations=10000, batch_size=256, verbose=None, gradient_check=False, num_parameters=0):
+    def fit(self, X, Y, eval_set=None, eval_metric='error', learning_rate=0.1, epochs=10000, batch_size=256, verbose=None, gradient_check=False, num_parameters=0):
         '''
         Fit
         '''
-
         results = {'loss': []}
         if eval_set == None:
             eval_set = []
         for i in range(len(eval_set)):
             results['eval' + str(i)] = []
-
-        # number of training examples
-        m = X.shape[1]
+        
+        m = X.shape[1] # number of training examples
 
         # Loop (epochs)
-        for i in range(0, num_iterations):
+        for i in range(epochs):
             epoch_cost = 0
 
             minibatches = DNN.__create_mini_batches(X, Y, batch_size)
@@ -397,14 +428,12 @@ class DNN:
                     self.__gradient_check(minibatch_X, minibatch_Y, grads, num_parameters=num_parameters)
 
                 # Gradient descent parameter update. 
-                self.__update_parameters(grads, learning_rate)
-
-                if verbose != None and i % verbose == 0:
-                    print('.', end='', flush=True)
+                self.__update_parameters(grads, learning_rate, i + 1)
 
             epoch_cost /= m
             epoch_costs = [epoch_cost]
 
+            #Evaluation
             i_eval = 0
             for X_eval, Y_eval in eval_set:
                 predictions = self.predict(X_eval)
@@ -423,16 +452,14 @@ class DNN:
                     epoch_costs.append(cost)
                 i_eval += 1
 
-            # Print the cost 
+            #Print the cost 
             if verbose != None and i % verbose == 0:
-                print('')
                 print ("Cost after iteration", i, ["{0:0.6f}".format(i) for i in epoch_costs])
-                #print ("Cost after iteration", i, epoch_costs)
                 
         return results            
     
     def predict(self, X):
-        """
+        '''
         Using the learned parameters, predicts the output for each example in X
 
         Arguments:
@@ -440,8 +467,7 @@ class DNN:
 
         Returns
         predictions -- vector of predicted outputs
-        """
+        '''
 
         A, _ = self.__forward_propagation(X)
         return A
-
