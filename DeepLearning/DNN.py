@@ -1,5 +1,7 @@
 import numpy as np
 import math
+import datetime
+import pickle
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import accuracy_score
 
@@ -39,13 +41,16 @@ def identity(Z):
     return Z
 
 def sigmoid(Z):
-    #numeric stability. a = 1/(1+np.exp(-37)) = 1.0 then log(1-a) in binary_crossentropy is infinite
+    #numeric stability
+    #a = 1/(1+np.exp(-37)) = 1.0 then log(1-a) in binary_crossentropy is infinite
     Z[Z > 32] = 32
     A = 1/(1 + np.exp(-Z))
     return A
 
 def softmax(Z):
-    A = np.exp(Z)/np.sum(np.exp(Z), axis=0)
+    #A = np.exp(Z)/np.sum(np.exp(Z), axis=0)
+    #for numerical stability
+    A = np.exp(Z - np.max(Z, axis=0))/np.sum(np.exp(Z - np.max(Z, axis=0)), axis=0)
     return A
 #
 #cost functions
@@ -58,6 +63,9 @@ def binary_crossentropy(AL, Y):
     return cost
 
 def categorical_crossentropy(AL, Y):
+    #numeric stability 
+    #np.log(1e-324) = -inf
+    AL[AL < 1e-300] = 1e-300
     m = Y.shape[1] # number of examples
     logprobs = np.multiply(np.log(AL), Y)
     cost = -np.sum(np.sum(logprobs, axis=0))/m
@@ -95,6 +103,9 @@ class DNN:
         self.init = 'RandomNormal'
         self.optimizer = 'GD'
         self.lambd = 0
+
+        self.epochs = 0
+        self.minibatches = 0
         
     def add_input_layer(self, node_count):
         assert(self.L == -1)
@@ -122,9 +133,12 @@ class DNN:
             self.optimizer = ('Adam', 0.9, 0.999, 1e-8)
         assert(self.optimizer[0] in ['GD', 'RMSProp', 'Adam'])
 
-        assert(self.lambd >= 0 and self.lambd < 1)
+        #assert(self.lambd >= 0 and self.lambd < 1)
 
         self.__initialize_parameters()
+
+        self.epochs = 0
+        self.minibatches = 0
 
     def __initialize_parameters(self):
         '''
@@ -405,12 +419,15 @@ class DNN:
         m = X.shape[1] # number of training examples
 
         # Loop (epochs)
-        for i in range(epochs):
+        for epoch in range(epochs):
+            self.epochs += 1
             epoch_cost = 0
 
             minibatches = DNN.__create_mini_batches(X, Y, batch_size)
 
             for minibatch in minibatches:
+                self.minibatches += 1
+                #print(self.epochs, self.minibatches)
                 (minibatch_X, minibatch_Y) = minibatch
 
                 # Forward propagation.
@@ -418,7 +435,7 @@ class DNN:
 
                 # Cost function. 
                 cost = self.__calculate_cost(A, minibatch_Y)
-                results['loss'].append(cost)
+                #results['loss'].append(cost)
                 epoch_cost += cost*minibatch_X.shape[1]
 
                 # Backpropagation
@@ -428,9 +445,10 @@ class DNN:
                     self.__gradient_check(minibatch_X, minibatch_Y, grads, num_parameters=num_parameters)
 
                 # Gradient descent parameter update. 
-                self.__update_parameters(grads, learning_rate, i + 1)
+                self.__update_parameters(grads, learning_rate, self.minibatches)
 
             epoch_cost /= m
+            results['loss'].append(epoch_cost)
             epoch_costs = [epoch_cost]
 
             #Evaluation
@@ -453,8 +471,8 @@ class DNN:
                 i_eval += 1
 
             #Print the cost 
-            if verbose != None and i % verbose == 0:
-                print ("Cost after iteration", i, ["{0:0.6f}".format(i) for i in epoch_costs])
+            if verbose != None and epoch % verbose == 0:
+                print (datetime.datetime.now(), "Cost after iteration", epoch, ["{0:0.6f}".format(i) for i in epoch_costs])
                 
         return results            
     
@@ -471,3 +489,15 @@ class DNN:
 
         A, _ = self.__forward_propagation(X)
         return A
+
+    def save(self, file):
+        output = open(file, 'wb')
+        pickle.dump(self, output)
+        output.close()
+
+    @staticmethod
+    def load(file):
+        input = open(file, 'rb')
+        dnn = pickle.load(input)
+        input.close()
+        return dnn

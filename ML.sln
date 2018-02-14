@@ -1,15 +1,21 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26430.16
+VisualStudioVersion = 15.0.26730.16
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Santander", "Santander\Santander.pyproj", "{80A18B4E-98F3-47BC-B665-7D7DA502A51D}"
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Airbnb", "Kaggle\Airbnb\Airbnb.pyproj", "{C665ED41-ADF1-4F5D-AEF1-6D9A242C74A0}"
 EndProject
-Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Facebook", "Facebook\Facebook.pyproj", "{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}"
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Facebook", "Kaggle\Facebook\Facebook.pyproj", "{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}"
 EndProject
-Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Airbnb", "Airbnb\Airbnb.pyproj", "{C665ED41-ADF1-4F5D-AEF1-6D9A242C74A0}"
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Santander", "Kaggle\Santander\Santander.pyproj", "{80A18B4E-98F3-47BC-B665-7D7DA502A51D}"
 EndProject
-Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "TwoSigma", "TwoSigma\TwoSigma.pyproj", "{64D3656F-EC30-479E-9F96-A9510B080B9C}"
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "TwoSigma", "Kaggle\TwoSigma\TwoSigma.pyproj", "{64D3656F-EC30-479E-9F96-A9510B080B9C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Kaggle", "Kaggle", "{FE4FFB10-0295-4F09-B6F9-E091C7C5C88D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Experiments", "Experiments", "{BA09720B-6A18-4CC0-8EC4-1B94B0B7ABCE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DeepLearning", "DeepLearning", "{42392DCB-5270-4D27-8138-ED8CCD9DF87B}"
 EndProject
 Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "DNN", "DeepLearning\DNN.pyproj", "{A5B814B1-4578-4826-8792-8C6BF6F88102}"
 EndProject
@@ -19,12 +25,12 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{80A18B4E-98F3-47BC-B665-7D7DA502A51D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{80A18B4E-98F3-47BC-B665-7D7DA502A51D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C665ED41-ADF1-4F5D-AEF1-6D9A242C74A0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C665ED41-ADF1-4F5D-AEF1-6D9A242C74A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80A18B4E-98F3-47BC-B665-7D7DA502A51D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80A18B4E-98F3-47BC-B665-7D7DA502A51D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{64D3656F-EC30-479E-9F96-A9510B080B9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{64D3656F-EC30-479E-9F96-A9510B080B9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A5B814B1-4578-4826-8792-8C6BF6F88102}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -32,5 +38,15 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{C665ED41-ADF1-4F5D-AEF1-6D9A242C74A0} = {FE4FFB10-0295-4F09-B6F9-E091C7C5C88D}
+		{421E35AA-449D-4D7D-B6C6-FF73B22A6F8A} = {FE4FFB10-0295-4F09-B6F9-E091C7C5C88D}
+		{80A18B4E-98F3-47BC-B665-7D7DA502A51D} = {FE4FFB10-0295-4F09-B6F9-E091C7C5C88D}
+		{64D3656F-EC30-479E-9F96-A9510B080B9C} = {FE4FFB10-0295-4F09-B6F9-E091C7C5C88D}
+		{A5B814B1-4578-4826-8792-8C6BF6F88102} = {42392DCB-5270-4D27-8138-ED8CCD9DF87B}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {AB16BF90-4935-4ACF-BF75-E46C588AB191}
 	EndGlobalSection
 EndGlobal

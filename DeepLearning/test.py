@@ -1,3 +1,4 @@
+import datetime
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -13,8 +14,8 @@ from sklearn import preprocessing
 from sklearn.preprocessing import OneHotEncoder
 
 #train/test split
-#from sklearn.model_selection import train_test_split
-from sklearn.cross_validation import train_test_split
+from sklearn.model_selection import train_test_split
+#from sklearn.cross_validation import train_test_split
 
 #metrics
 from sklearn.metrics import accuracy_score
@@ -40,7 +41,7 @@ class KerasCallback(keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         if self.verbose != None and epoch % self.verbose == 0:
-            print(epoch, logs['loss'], logs['acc'], logs['val_acc'])        
+            print(epoch, logs)
 
 def titanic_prep(api='dnn'):
     test_size=0.2
@@ -224,7 +225,7 @@ def MNIST_dnn(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
     if random_seed != None:
         np.random.seed(random_seed)
 
-    hidden_1, hidden_2, activation, epochs, learning_rate, batch_size, method, momentum = parameters
+    hidden, activation, epochs, learning_rate, batch_size, method, momentum, lambd = parameters
     if activation == 'tanh':
         initializer = 'Lecun'
         activation = np.tanh
@@ -234,13 +235,10 @@ def MNIST_dnn(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
     else:
         raise ValueError('activation')
 
-    regularizer = None
-    #regularizer = regularizers.l2(0.01)
-
     dnn = DNN.DNN()
     dnn.add_input_layer(X_train.shape[0])
-    dnn.add_layer(hidden_1, activation)
-    dnn.add_layer(hidden_2, activation)
+    for x in hidden:
+        dnn.add_layer(x, activation)
     dnn.add_layer(10, DNN.softmax)
     dnn.costfunction = DNN.categorical_crossentropy
     dnn.init = initializer
@@ -249,6 +247,7 @@ def MNIST_dnn(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
     else:
         optimizer = method
     dnn.optimizer = optimizer
+    dnn.lambd = lambd
     dnn.compile()
 
     gradient_check=False
@@ -262,7 +261,7 @@ def MNIST_dnn(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
     Y_predict = dnn.predict(X_dev)
     accuracy_dev = accuracy_score(Y_predict.argmax(axis=0), Y_dev.argmax(axis=0))
 
-    print(accuracy_train, accuracy_dev, hidden_1, hidden_2, activation, epochs, learning_rate, batch_size, method, momentum)
+    print(accuracy_train, accuracy_dev, hidden, activation, epochs, learning_rate, batch_size, method, momentum, lambd)
 
 def MNIST_keras(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
     #random seed for parameters init, batch shuffle
@@ -383,9 +382,6 @@ def zillow_dnn(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
     else:
         raise ValueError('activation')
 
-    regularizer = None
-    #regularizer = regularizers.l2(0.01)
-
     dnn = DNN.DNN()
     dnn.add_input_layer(X_train.shape[0])
     dnn.add_layer(hidden_1, activation)
@@ -401,7 +397,8 @@ def zillow_dnn(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
     dnn.compile()
 
     gradient_check=False
-    verbose = None
+    #verbose = None
+    verbose = 100
 
     results = dnn.fit(X_train, Y_train, eval_set=[(X_train, Y_train), (X_dev, Y_dev)], eval_metric='mae', learning_rate=learning_rate, epochs=epochs, batch_size=batch_size, gradient_check=gradient_check, verbose=verbose)
 
@@ -446,9 +443,10 @@ def zillow_keras(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
     model.compile(loss='mean_squared_error', optimizer=optimizer, metrics=['mae'])
 
     initial_epoch = 0
+    #verbose = 1
     verbose = 0
-    #verbose2 = 10
-    verbose2 = None
+    verbose2 = 100
+    #verbose2 = None
     results = model.fit(X_train, Y_train, batch_size=batch_size, epochs=epochs, callbacks=[KerasCallback(verbose2)], validation_data = (X_dev, Y_dev), verbose=verbose, initial_epoch=initial_epoch)
 
     Y_predict = model.predict(X_train)
@@ -463,29 +461,84 @@ def zillow_keras(parameters, X_train, X_dev, Y_train, Y_dev, random_seed=None):
         accuracy_dev = 0
 
     print(accuracy_train, accuracy_dev, hidden_1, hidden_2, activation, epochs, learning_rate, batch_size, method, momentum)
+    
+    '''
+    plt.plot(results.history['mean_absolute_error'])
+    plt.show()
+    df_eval0 = pd.DataFrame(results.history['mean_absolute_error'])
+    df_eval0[0].ewm(span=50).mean().plot(style='k')
+    plt.show()
+    '''
 
+def MNIST_tune(X_train, X_dev, Y_train, Y_dev, api='dnn'):
+    hidden_1_values = [200]
+    hidden_2_values = [50]
+    activations = ['relu']
+    epochs_values = [100]
+    learning_rates = [0.01]
+    batch_sizes = [256]
+    methods = ['Adam']
+    #momentum_values = [0, 0.9, 0.98]
+    lambd_values = [1, 3.33, 10]
+
+    configs = []
+    for hidden_1 in hidden_1_values:
+        for hidden_2 in hidden_2_values:
+            hidden = [hidden_1, hidden_2]
+            for activation in activations:
+                for epochs in epochs_values:
+                    for learning_rate in learning_rates:
+                        for batch_size in batch_sizes:
+                            for lambd in lambd_values:
+                                for method in methods:
+                                    if method == 'GD':
+                                        for momentum in momentum_values:
+                                            configs.append([hidden, activation, epochs, learning_rate, batch_size, method, momentum, lambd])
+                                    else:
+                                        configs.append((hidden, activation, epochs, learning_rate, batch_size, method, 0, lambd))
+
+
+    print(len(configs))
+    for parameters in configs:
+        np.random.seed(0) # set a seed so that the results are consistent
+        if api == 'dnn':
+            MNIST_dnn(parameters, X_train, X_dev, Y_train, Y_dev)
+        elif api == 'keras':
+            MNIST_keras(parameters, X_train, X_dev, Y_train, Y_dev)
+        else:
+            raise ValueError('api')
 
 np.random.seed(0) 
+'''
 #titanic
 X_train, X_dev, Y_train, Y_dev = titanic_prep('dnn')
 titanic_dnn(X_train, X_dev, Y_train, Y_dev)
 parameters = (20, 10, 'tanh', 10000, 0.001, 'Adam', 0)
 X_train, X_dev, Y_train, Y_dev = titanic_prep('keras')
 titanic_keras(parameters, X_train, X_dev, Y_train, Y_dev)
+'''
 
 #MNIST
-parameters = (200, 50, 'tanh', 100, 0.1, 256, 'GD', 0.9)
 X_train, X_dev, Y_train, Y_dev = MNIST_prep('dnn')
-MNIST_dnn(parameters, X_train, X_dev, Y_train, Y_dev)
-X_train, X_dev, Y_train, Y_dev = MNIST_prep('keras')
-MNIST_keras(parameters, X_train, X_dev, Y_train, Y_dev)
+#parameters = ([200, 50], 'relu', 100, 0.1, 256, 'Adam', 0)
+#MNIST_dnn(parameters, X_train, X_dev, Y_train, Y_dev)
+MNIST_tune(X_train, X_dev, Y_train, Y_dev, 'dnn')
+
+#X_train, X_dev, Y_train, Y_dev = MNIST_prep('keras')
+#MNIST_keras(parameters, X_train, X_dev, Y_train, Y_dev)
 
 #Zillow
-parameters = (50, 50, 'relu', 500, 0.01, 512, 'RMSProp', 0)
+'''
+parameters = (100, 20, 'relu', 500, 0.005, 512, 'Adam', 0)
 X_train, X_dev, Y_train, Y_dev = zillow_prep('dnn')
-zillow_dnn(parameters, X_train, X_dev, Y_train, Y_dev)
+print(datetime.datetime.now())
+#zillow_dnn(parameters, X_train, X_dev, Y_train, Y_dev)
+print(datetime.datetime.now())
 #zillow_tune(X_train, X_dev, Y_train, Y_dev, 'dnn')
-X_train, X_dev, Y_train, Y_dev = zillow_prep('keras')
-zillow_keras(parameters, X_train, X_dev, Y_train, Y_dev)
-#zillow_tune(X_train, X_dev, Y_train, Y_dev, 'keras')
 
+X_train, X_dev, Y_train, Y_dev = zillow_prep('keras')
+print(datetime.datetime.now())
+zillow_keras(parameters, X_train, X_dev, Y_train, Y_dev)
+print(datetime.datetime.now())
+#zillow_tune(X_train, X_dev, Y_train, Y_dev, 'keras')
+'''
