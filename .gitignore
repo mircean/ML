@@ -30,3 +30,5 @@
 /DeepLearning/Zillow/properties_2016.csv
 /.vs/ML/v15
 /DeepLearning/.vs/config
+/Experiments/TextClassification/.ipynb_checkpoints
+/Experiments/TextClassification/__pycache__
