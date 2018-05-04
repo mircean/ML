@@ -20,11 +20,11 @@ import dataset
 opt = {'bow_tfidf': True,
         'bow_ngram_range': (1,2),
         'bow_min_df': 5,
-        'glove_file': r'C:\Users\mircea-mac\OneDrive\Glove\glove.840B.300d.txt',
+        'glove_file': r'C:\Users\mirce\OneDrive\Glove\glove.840B.300d.txt',
         'glove_dim': 300,
         'vocabulary_padding_id': 0,
         'vocabulary_unknown_id': 1,
-        'cuda': False,
+        'cuda': True,
         'batch_size': 256
         }
 
@@ -201,13 +201,19 @@ class WordVecSum:
 
         print(datetime.datetime.now(), 'Buidling embeddings')
         self.embeddings = build_embeddings(vocabulary)
+    
+        self.create_model()
+
+    def reset(self):
+        self.create_model()
         
+    def create_model(self):
         print(datetime.datetime.now(), 'Creating model')
         self.model = WordVecSumModule(self.embeddings, self.num_classes)
         if opt['cuda']:
             self.model.cuda()
             
-        if num_classes == 2:
+        if self.num_classes == 2:
             self.criterion = torch.nn.BCELoss()
         else:
             self.criterion = torch.nn.CrossEntropyLoss()
@@ -251,7 +257,8 @@ class WordVecSum:
             _, Y_predict = torch.max(Y_predict, 1)
 
         correct = (Y_predict.float() == Y_true).sum()
-        correct = correct.cpu().data.numpy()[0]
+        correct = correct.cpu().data.numpy()
+        #correct = correct.cpu().data.numpy()[0]
         accuracy = correct/Y_true.size(0)
         return accuracy
 
@@ -288,6 +295,8 @@ class WordVecSum:
         Y_test = self.dataset.df_test['label'].values  
 
         m_train = len(X_train)
+        m_test = len(X_test)
+        
         accuracy_test_best = 0
         
         for epoch_local in range(10000):
@@ -297,8 +306,8 @@ class WordVecSum:
             #shuffle data
             permutation = torch.randperm(m_train)
             
-            accuracies_train = []
-            accuracies_test = []
+            accuracies = []
+            accuracies_weights = []
             batch = 0
             for start_idx in range(0, m_train, opt['batch_size']):
                 batch = batch + 1
@@ -309,26 +318,31 @@ class WordVecSum:
                 loss = self.criterion(Y_predict, Y_train_batch)
 
                 accuracy = self.calculate_accuracy(Y_train_batch, Y_predict)
-                accuracies_train.append(accuracy)
+                accuracies.append(accuracy)
+                accuracies_weights.append(len(indices))
 
                 #Zero gradients, perform a backward pass, and update the weights.
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
 
-            if self.epoch % 1 == 0:
+            if self.epoch % 100 == 0:
                 #Calculate train and test accuracy
-                accuracy_train = sum(accuracies_train)/len(accuracies_train)
+                accuracy_train = np.average(accuracies, weights=accuracies_weights)
 
                 self.model.eval()
                 
-                #TODO: batches
-                indices = [i for i in range(100)]
-                X_test_batch, X_test_mask_batch, Y_test_batch = self.create_batch(X_test, Y_test, indices)
-                Y_predict = self.model(X_test_batch, X_test_mask_batch) 
-                accuracy_test = self.calculate_accuracy(Y_test_batch, Y_predict)
+                for start_idx in range(0, m_train, opt['batch_size']):
+                    indices = [start_idx + i for i in range(opt['batch_size']) if start_idx + i < m_test ]
+                    X_test_batch, X_test_mask_batch, Y_test_batch = self.create_batch(X_test, Y_test, indices)
+                    Y_predict = self.model(X_test_batch, X_test_mask_batch) 
+                    accuracy = self.calculate_accuracy(Y_test_batch, Y_predict)
+                    accuracies.append(accuracy)
+                    accuracies_weights.append(len(indices))
                 
-                print("epoch {0:06d} loss {1:.4f} train acc {2:.4f} test acc {3:.4f}".format(self.epoch, loss.cpu().data.numpy()[0], accuracy_train, accuracy_test))
+                accuracy_test = np.average(accuracies, weights=accuracies_weights)
+                
+                print("epoch {0:06d} loss {1:.4f} train acc {2:.4f} test acc {3:.4f}".format(self.epoch, loss.cpu().data.numpy(), accuracy_train, accuracy_test))
                 if accuracy_test > accuracy_test_best:
                     accuracy_test_best = accuracy_test
                     #torch.save(model, 'models/model' + str(epoch))
