@@ -140,14 +140,12 @@ class WordVecSumModule(nn.Module):
         for p in self.embedding.parameters():
             p.requires_grad = False
         
-        #linear layer
+        #liniar layerm + sigmoid/softmax
         if self.num_classes == 2:
             self.linear = nn.Linear(self.embedding_dim, 1)    
             self.sigmoid = nn.Sigmoid()
         else:
             self.linear = nn.Linear(self.embedding_dim, num_classes)
-            #nn.init.xavier_normal(self.linear.weight)
-            #self.linear.bias.data.zero_()
      
     def forward(self, X, X_mask):
         #X: [m, Tx] m = batch size, Tx = word count
@@ -185,7 +183,91 @@ class WordVecSumModule(nn.Module):
         else:
             return F.softmax(X)
             
-class WordVecSum:
+class NGramCNN(nn.Module):
+    def __init__(self, embeddings, num_classes=2):
+        super(NGramCNN, self).__init__()    
+    
+        self.num_classes = num_classes
+        
+        #embedding layer
+        self.embedding_dim = embeddings.shape[1]
+        self.embedding = nn.Embedding(embeddings.shape[0],  #vocab size
+                                      self.embedding_dim,   #embedding_dim
+                                      padding_idx=0)
+        self.embedding.weight.data = torch.Tensor(embeddings)
+        #do not backprop into embeddings
+        for p in self.embedding.parameters():
+            p.requires_grad = False
+
+        #conv layer
+        self.conv = nn.Conv1d(self.embedding_dim, 256, kernel_size=3, stride=1, padding=1)        
+
+        #max pool layer
+        self.maxpool = nn.AdaptiveMaxPool1d(output_size=1)
+
+        #liniar layerm + sigmoid/softmax
+        if self.num_classes == 2:
+            self.linear = nn.Linear(256, 1)    
+            self.sigmoid = nn.Sigmoid()
+        else:
+            self.linear = nn.Linear(256, num_classes)
+
+    def forward(self, X, X_mask):
+        #X: [m, Tx] m = batch size, Tx = word count
+        #print(X.size(), type(X))
+        m = X.size()[0]
+        Tx = X.size()[1]
+        
+        #embedding layer
+        X = self.embedding(X)
+        #X: [m, Tx, embedding_dim] m = batch size, Tx = word count
+        #print(X.size(), type(X.data))
+        assert X.size() == torch.Size([m, Tx, self.embedding_dim])
+        
+        #conv layer
+        #transpose
+        X = torch.transpose(X, 1, 2)
+        #print(X.size(), type(X.data))
+
+        X = self.conv(X)
+        #print(X.size(), type(X.data))
+
+        #transpose back
+        X = torch.transpose(X, 1, 2)
+        #print(X.size(), type(X.data))
+
+        assert X.size() == torch.Size([m, Tx, 256])
+
+        #maxpool layer
+        #transpose
+        X = torch.transpose(X, 1, 2)
+        X = self.maxpool(X)
+        #print(X.size(), type(X.data))
+        #remove dimension
+        X = X.squeeze()
+        #print(X.size(), type(X.data))
+        assert X.size() == torch.Size([m, 256])
+
+        #linear 
+        X = self.linear(X)
+        #X: [m, 1]
+        #print(X.size(), type(X))
+        if self.num_classes == 2:
+            assert X.size() == torch.Size([m, 1])
+        else:
+            assert X.size() == torch.Size([m, self.num_classes])
+            
+        if self.num_classes == 2:
+            X = torch.squeeze(X)
+            X = self.sigmoid(X)
+            #X: [m]
+            #print(X.size(), type(X))
+            assert X.size() == torch.Size([m])
+            return X
+        else:
+            return F.softmax(X)
+
+class Trainer:
     def __init__(self, dataset, num_classes):
         self.dataset = dataset
         self.num_classes = num_classes
@@ -209,14 +291,16 @@ class WordVecSum:
         
     def create_model(self):
         print(datetime.datetime.now(), 'Creating model')
-        self.model = WordVecSumModule(self.embeddings, self.num_classes)
+        #self.model = WordVecSumModule(self.embeddings, self.num_classes)
+        self.model = NGramCNN(self.embeddings, self.num_classes)
+        
         if opt['cuda']:
             self.model.cuda()
             
         if self.num_classes == 2:
             self.criterion = torch.nn.BCELoss()
         else:
-            self.criterion = torch.nn.CrossEntropyLoss()
+            self.loss = torch.nn.CrossEntropyLoss()
     
         self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.model.parameters()), lr=1e-2)
         self.epoch = 0        
@@ -280,7 +364,7 @@ class WordVecSum:
 
             X_train_batch, X_train_mask_batch, Y_train_batch = self.create_batch(X_train, Y_train, indices)
             Y_predict = self.model(X_train_batch, X_train_mask_batch)
-            loss = self.criterion(Y_predict, Y_train_batch)
+            loss = self.loss(Y_predict, Y_train_batch)
 
             accuracy = self.calculate_accuracy(Y_train_batch, Y_predict)
             accuracies.append(accuracy)
@@ -288,7 +372,7 @@ class WordVecSum:
 
         print(sum(accuracies)/len(accuracies))
 
-    def train(self):
+    def train(self, epochs=1000):
         X_train = self.dataset.df_train['ids'].values
         Y_train = self.dataset.df_train['label'].values
         X_test = self.dataset.df_test['ids'].values
@@ -299,7 +383,7 @@ class WordVecSum:
         
         accuracy_test_best = 0
         
-        for epoch_local in range(10000):
+        for epoch_local in range(epochs):
             #Forward pass
             self.model.train()
 
@@ -315,7 +399,7 @@ class WordVecSum:
                 
                 X_train_batch, X_train_mask_batch, Y_train_batch = self.create_batch(X_train, Y_train, indices)
                 Y_predict = self.model(X_train_batch, X_train_mask_batch)
-                loss = self.criterion(Y_predict, Y_train_batch)
+                loss = self.loss(Y_predict, Y_train_batch)
 
                 accuracy = self.calculate_accuracy(Y_train_batch, Y_predict)
                 accuracies.append(accuracy)
@@ -326,7 +410,7 @@ class WordVecSum:
                 loss.backward()
                 self.optimizer.step()
 
-            if self.epoch % 100 == 0:
+            if self.epoch % 10 == 0:
                 #Calculate train and test accuracy
                 accuracy_train = np.average(accuracies, weights=accuracies_weights)
 
