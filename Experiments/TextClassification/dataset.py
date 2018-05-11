@@ -14,6 +14,10 @@ opt = {'text_pp_remove_symbols': False,
        'text_pp_remove_stop_words': False
        }
 
+def cleanup_for_char_level(text):
+    text = text.replace('\n', ' ')
+    return text
+    
 def ignore_word(word):
     return False
 
@@ -32,7 +36,7 @@ def html2text_(html):
 def text2words(text):
     #this works better for imdb. not sure why quotes are not handled inconsistently by spacy
     text = text.replace('"', ' ')
-    
+  
     doc = nlp(text)
     
     words = [w for w in doc if not w.is_space and not w.is_bracket and not w.is_punct]
@@ -59,4 +63,6 @@ class Dataset:
         self.df_test['text_parsed'] = self.df_test['text'].apply(lambda x: html2text_(x))
         self.df_train['words'] = self.df_train['text_parsed'].apply(lambda x: text2words(x))
         self.df_test['words'] = self.df_test['text_parsed'].apply(lambda x: text2words(x))
-    
+
+
+
