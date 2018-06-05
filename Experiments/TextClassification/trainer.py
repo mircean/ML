@@ -356,14 +356,6 @@ class NNTrainer(Trainer):
             
             Y_test_all = np.concatenate((Y_test_all, Y_test_batch.cpu().data.numpy()))
             Y_predict_all = np.concatenate((Y_predict_all, Y_predict.cpu().detach().numpy()))
-            '''
-            if self.num_classes == 2:
-                Y_predict = (Y_predict >= 0.5).float()
-                Y_predict_all = np.concatenate((Y_predict_all, Y_predict))
-            else:
-                _, Y_predict = torch.max(Y_predict, 1)
-                Y_predict_all = np.concatenate((Y_predict_all, Y_predict.cpu().detach().numpy()))
-            '''
             del X_test_batch, X_test_mask_batch, Y_test_batch, Y_predict
 
         accuracy = np.average(accuracies, weights=batch_weights)
