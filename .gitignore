@@ -32,3 +32,5 @@
 /DeepLearning/.vs/config
 /Experiments/TextClassification/.ipynb_checkpoints
 /Experiments/TextClassification/__pycache__
+pocs/rft/wandb/
+pocs/wandb/

@@ -1,4 +1,3 @@
-# train_grpo.py
 from datasets import load_dataset
 from trl import GRPOConfig, GRPOTrainer
 
@@ -11,6 +10,9 @@ def reward_len(completions, **kwargs):
 
 
 training_args = GRPOConfig(output_dir="Qwen2-0.5B-GRPO", logging_steps=10)
+# training_args.num_generations = 2
+# training_args.per_device_train_batch_size = 2
+
 trainer = GRPOTrainer(
     model="Qwen/Qwen2-0.5B-Instruct",
     reward_funcs=reward_len,
