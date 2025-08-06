@@ -34,3 +34,4 @@
 /Experiments/TextClassification/__pycache__
 pocs/rft/wandb/
 pocs/wandb/
+pocs/rft/Qwen2-0.5B-GRPO/
