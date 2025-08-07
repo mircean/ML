@@ -1,22 +1,44 @@
 import torch
-from transformers import pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 model_id = "openai/gpt-oss-20b"
+# model_id = "openai/gpt-oss-120b"
+
+
+messages = [
+    {"role": "user", "content": "Explain quantum mechanics clearly and concisely."},
+]
 
 pipe = pipeline(
     "text-generation",
     model=model_id,
     torch_dtype=torch.bfloat16,
-    # device_map="auto",
-    device_map="cpu",
+    device_map="auto",
 )
 
-messages = [
-    {"role": "user", "content": "Explain quantum mechanics clearly and concisely."},
-]
 
 outputs = pipe(
     messages,
     max_new_tokens=256,
 )
 print(outputs[0]["generated_text"][-1])
+
+
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# tokenizer = AutoTokenizer.from_pretrained(model_id)
+# model = AutoModelForCausalLM.from_pretrained(
+#     model_id,
+#     torch_dtype=torch.bfloat16,
+#     device_map="auto",
+# )
+
+# inputs = tokenizer.apply_chat_template(
+#     messages,
+#     tokenize=True,
+#     add_generation_prompt=True,
+#     return_tensors="pt",
+# ).to(device)
+
+# outputs = model.generate(inputs, max_new_tokens=256)
+# print(tokenizer.decode(outputs[0], skip_special_tokens=True))
