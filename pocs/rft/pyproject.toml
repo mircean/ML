@@ -6,10 +6,33 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "datasets>=3.6.0",
+    "math-verify>=0.7.0",
+    "peft>=0.15.2",
+    "ruff>=0.12.0",
     "torch>=2.7.1",
     "torchaudio>=2.7.1",
     "torchvision>=0.22.1",
     "transformers>=4.52.4",
-    "trl>=0.18.1",
+    "trl[vllm]>=0.18.1",
+    "vllm>=0.10.0",
     "wandb>=0.20.1",
 ]
+
+[tool.ruff]
+line-length = 160
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rft"]
+known-third-party = ["torch", "transformers", "datasets", "trl", "wandb"]
