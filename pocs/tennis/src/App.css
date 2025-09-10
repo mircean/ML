@@ -1,0 +1,76 @@
+#root {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.container h1 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.scoreboard {
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(0,0,0,0.2);
+}
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+}
+.score-label {
+  opacity: 0.8;
+}
+.score-value {
+  font-weight: 700;
+}
+.score-value.game {
+  font-size: 1.4rem;
+}
+
+.controls {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+.players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.player-section { border: 1px solid #333; border-radius: 8px; padding: 0.75rem; }
+.player-title { font-weight: 700; margin-bottom: 0.5rem; }
+.actions-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.action-win { background: #0d6efd; color: white; }
+.action-err { background: #8b0000; color: white; }
+.match-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+.primary {
+  background: #0d6efd;
+  color: white;
+}
+.primary:disabled {
+  background: #2b2b2b;
+}
+
+.stats {
+  margin-top: 1.5rem;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.player {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px dotted rgba(255,255,255,0.2);
+}
+.completed-sets ul {
+  margin: 0.25rem 0 0 0;
+}
