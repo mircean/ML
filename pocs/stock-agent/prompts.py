@@ -188,13 +188,21 @@ Do not neccesarily use all the cash to buy stocks, buy only stocks that are wort
 {get_database_schema()}
 
 You have access to web search tools for additional market research.
-Think carefully after each tool call and explain your reasoning.
+
+**ANALYSIS PROCESS:**
+After each tool call, reflect on what you learned and think through:
+- What do the results tell you about market conditions?
+- Which stocks look most promising based on fundamentals and momentum?
+- Are there any risks or concerns you should consider?
+- Do you need more information before making decisions?
+
+Continue using tools to gather comprehensive data until you can make confident trading recommendations.
 
 Please use the available tools:
 1. Use `run_sql` to execute SQL queries against this database to answer user questions about stocks, financial metrics, price movements, and market analysis.
 2. Use search_market_news to get recent market trends and news
 
-Keep analyzing and researching until you have enough information to make confident trading recommendations.
+Keep analyzing and researching systematically. After each tool use, provide your analysis of the results and explain what additional information you might need.
 
 After your analysis, provide specific BUY/SELL recommendations with:
 - Stock symbol
@@ -206,22 +214,6 @@ Current portfolio status:
 - Positions: {portfolio_positions}
 """
 
-
-def get_thinking_prompt() -> str:
-    """
-    Get the prompt for the thinking node.
-
-    Returns:
-        Thinking prompt string
-    """
-    return """Based on the analysis results you just received, please think through:
-
-1. What do the market conditions tell you?
-2. Which stocks look most promising based on fundamentals and momentum?
-3. Are there any risks or concerns you should consider?
-4. How does this information help you make trading decisions?
-
-Provide your detailed analysis and reasoning."""
 
 
 def get_summary_prompt(

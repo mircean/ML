@@ -25,10 +25,25 @@ logging.getLogger("yfinance").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
+def init_portfolio():
+    portfolio_path = config.PORTFOLIO_FILE
+
+    if not os.path.exists(portfolio_path):
+        portfolio = {
+            "cash": config.DEFAULT_CASH,
+            "positions": {},
+            "total_value": config.DEFAULT_CASH,
+            "positions_value": 0,
+        }
+        with open(portfolio_path, "w") as f:
+            json.dump(portfolio, f, indent=2)
+
+
 def update_portfolio_values():
     """Update portfolio values based on current stock prices."""
     db_path = config.DATABASE_PATH
     portfolio_path = config.PORTFOLIO_FILE
+    init_portfolio()
     assert os.path.exists(portfolio_path), f"Portfolio file not found: {portfolio_path}"
 
     # Load portfolio

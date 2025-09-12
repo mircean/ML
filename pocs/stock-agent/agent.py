@@ -78,29 +78,6 @@ class TradingState(Dict):
     tool_call_count: int
 
 
-# Portfolio management functions
-def load_portfolio_data():
-    """Load the current portfolio from storage."""
-    portfolio_file = config.PORTFOLIO_FILE
-
-    if os.path.exists(portfolio_file):
-        with open(portfolio_file, "r") as f:
-            data = json.load(f)
-            return {
-                "success": True,
-                "cash": data.get("cash", config.DEFAULT_CASH),
-                "positions": data.get("positions", {}),
-                "message": f"Portfolio loaded: ${data.get('cash', config.DEFAULT_CASH):.2f} cash, {len(data.get('positions', {}))} positions",
-            }
-    else:
-        return {
-            "success": True,
-            "cash": config.DEFAULT_CASH,
-            "positions": {},
-            "message": f"New portfolio initialized with ${config.DEFAULT_CASH}",
-        }
-
-
 @tool
 def run_sql(query: str) -> str:
     """
@@ -188,11 +165,14 @@ def search_market_news(query: str) -> str:
 # Define the agent nodes
 def initialize_agent_node(state: TradingState) -> TradingState:
     """Initialize agent with portfolio and system message."""
+    portfolio_file = config.PORTFOLIO_FILE
+    assert os.path.exists(portfolio_file), f"Portfolio file not found: {portfolio_file}"
     # Load portfolio data
-    portfolio_data = load_portfolio_data()
+    with open(portfolio_file, "r") as f:
+        portfolio = json.load(f)
 
-    state["portfolio_cash"] = portfolio_data.get("cash", 1000.0)
-    state["portfolio_positions"] = portfolio_data.get("positions", {})
+    state["portfolio_cash"] = portfolio.get("cash", config.DEFAULT_CASH)
+    state["portfolio_positions"] = portfolio.get("positions", {})
     state["trade_actions"] = []
     state["analysis_complete"] = False
     state["trading_complete"] = False
@@ -213,17 +193,6 @@ def market_analysis_node(state: TradingState) -> TradingState:
     """Analyze market data and make trading decisions."""
     # The LLM will respond with tool calls, which will be handled by the tool node
     response = llm_with_tools.invoke(state["messages"])
-    state["messages"].append(response)
-
-    return state
-
-
-def thinking_node(state: TradingState) -> TradingState:
-    """Let the agent think about the results."""
-    thinking_prompt = prompts.get_thinking_prompt()
-
-    state["messages"].append(HumanMessage(content=thinking_prompt))
-    response = llm.invoke(state["messages"])
     state["messages"].append(response)
 
     return state
@@ -270,8 +239,6 @@ tools = [run_sql, search_market_news]
 tool_node = ToolNode(tools)
 llm_with_tools = llm.bind_tools(tools)
 
-thinking_enabled = False
-
 
 # Define routing logic
 def should_continue(state: TradingState):
@@ -295,7 +262,6 @@ workflow = StateGraph(TradingState)
 # Add nodes
 workflow.add_node("initialize_agent", initialize_agent_node)
 workflow.add_node("market_analysis", market_analysis_node)
-workflow.add_node("thinking", thinking_node)
 workflow.add_node("recommend_trades", recommend_trades_node)
 workflow.add_node("tools", tools_node_wrapper)
 
@@ -303,11 +269,7 @@ workflow.add_node("tools", tools_node_wrapper)
 workflow.set_entry_point("initialize_agent")
 workflow.add_edge("initialize_agent", "market_analysis")
 workflow.add_conditional_edges("market_analysis", should_continue)
-if thinking_enabled:
-    workflow.add_edge("tools", "thinking")
-    workflow.add_edge("thinking", "market_analysis")
-else:
-    workflow.add_edge("tools", "market_analysis")
+workflow.add_edge("tools", "market_analysis")
 workflow.add_edge("recommend_trades", END)
 
 
