@@ -1,0 +1,21 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+
+# Virtual environments
+.venv/
+
+# IDE
+
+# OS
+
+# Logs
+*.log
+log.txt
+
+# Database files
+
+# JSON data files (if containing sensitive data)
+.concur_tokens.json
