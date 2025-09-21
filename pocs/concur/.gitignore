@@ -19,3 +19,7 @@ log.txt
 
 # JSON data files (if containing sensitive data)
 .concur_tokens.json
+.email_tokens.json
+.outlook_tokens.json
+msal_cache.json
+

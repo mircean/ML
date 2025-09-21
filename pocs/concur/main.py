@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 
-from auth import ConcurAuthenticator
+from concur_auth import ConcurAuthenticator
 from concur_client import ConcurClient
 from dotenv import load_dotenv
 
