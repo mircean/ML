@@ -45,6 +45,7 @@ def load_config():
     config["scopes"] = ["Mail.Read"]
     config["message_limit"] = int(os.getenv("MESSAGE_LIMIT", "10"))
     config["log_level"] = os.getenv("LOG_LEVEL", "INFO")
+    config["search_term"] = os.getenv("SEARCH_TERM", "")  # Optional search term
 
     return config
 
@@ -90,10 +91,19 @@ def main():
             "hasAttachments", "bodyPreview"
         ]
 
-        messages = client.get_messages(
-            limit=config["message_limit"],
-            select_fields=select_fields
-        )
+        # Use search if search_term is provided, otherwise get inbox messages
+        if config["search_term"]:
+            logger.info(f"Searching for: '{config['search_term']}'")
+            messages = client.search_messages(
+                search_term=config["search_term"],
+                limit=config["message_limit"],
+                select_fields=select_fields
+            )
+        else:
+            messages = client.get_messages(
+                limit=config["message_limit"],
+                select_fields=select_fields
+            )
 
         if not messages:
             logger.info("No messages found")
