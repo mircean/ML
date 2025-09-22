@@ -18,10 +18,13 @@ class OutlookClient:
         self.base_url = "https://graph.microsoft.com/v1.0"
         self.session = requests.Session()
 
-    def _make_request(self, method: str, endpoint: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+    def _make_request(self, method: str, endpoint: str, params: Optional[Dict] = None, headers: Optional[Dict] = None) -> Dict[str, Any]:
         """Make authenticated request to Outlook API."""
         token = self.authenticator.get_access_token()
-        self.session.headers.update({"Authorization": f"Bearer {token}"})
+        request_headers = {"Authorization": f"Bearer {token}"}
+        if headers:
+            request_headers.update(headers)
+        self.session.headers.update(request_headers)
 
         url = f"{self.base_url}{endpoint}"
         response = self.session.request(method, url, params=params, timeout=30)
@@ -30,7 +33,8 @@ class OutlookClient:
         if response.status_code in (401, 403):
             logger.debug("Token expired, retrying with fresh token")
             token = self.authenticator.get_access_token()
-            self.session.headers.update({"Authorization": f"Bearer {token}"})
+            request_headers["Authorization"] = f"Bearer {token}"
+            self.session.headers.update(request_headers)
             response = self.session.request(method, url, params=params, timeout=30)
 
         response.raise_for_status()
@@ -88,3 +92,39 @@ class OutlookClient:
         attachments = response_data.get("value", [])
         logger.debug(f"Found {len(attachments)} attachments")
         return attachments
+
+    def search_messages(self, search_term: str, limit=50, select_fields=None) -> List[Dict[str, Any]]:
+        """
+        Search for messages containing a specific term.
+
+        Args:
+            search_term: Term to search for in messages
+            limit: Number of messages to retrieve
+            select_fields: List of fields to select
+
+        Returns:
+            List of message dictionaries matching the search term
+        """
+        endpoint = "/me/messages"
+
+        params = {
+            "$search": f'"{search_term}"',
+            "$top": limit
+        }
+
+        if select_fields:
+            params["$select"] = ",".join(select_fields)
+
+        logger.info(f"Searching for messages containing: {search_term}")
+
+        # Search requires ConsistencyLevel header
+        headers = {"ConsistencyLevel": "eventual"}
+        response_data = self._make_request("GET", endpoint, params, headers)
+
+        messages = response_data.get("value", [])
+
+        # Client-side sort by receivedDateTime desc (search doesn't support $orderby)
+        messages.sort(key=lambda m: m.get("receivedDateTime", ""), reverse=True)
+
+        logger.info(f"Found {len(messages)} messages matching '{search_term}'")
+        return messages
