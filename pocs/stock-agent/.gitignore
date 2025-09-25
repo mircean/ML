@@ -1,0 +1,18 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+
+# Generated data files
+nasdaq_stocks.db
+portfolio.json
+log.txt
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+launchd.out
+launchd.err
+
+msal_cache.json

@@ -7,9 +7,13 @@ Uses NASDAQ database and web search to make trading decisions.
 """
 
 import json
+import logging
 import os
 from dataclasses import dataclass
-from typing import Annotated, Dict, List
+from typing import Annotated, Dict, List, Optional
+
+import config
+import prompts
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -25,17 +29,30 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from pydantic import BaseModel
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-import config
-import prompts
 
-# Setup logging
-config.setup_logging()
+class TradeRecommendation(BaseModel):
+    """Structured trade recommendation from the trading agent."""
 
-# Configure the LLM
-llm = ChatOpenAI(model=config.LLM_MODEL, temperature=config.LLM_TEMPERATURE)
+    action: str  # "BUY", "SELL", or "HOLD"
+    symbol: Optional[str] = None  # Stock symbol (if applicable)
+    shares: Optional[float] = None  # Number of shares
+    price: Optional[float] = None  # Target price
+    reasoning: str  # Detailed reasoning for the recommendation
+    confidence: Optional[str] = None  # "HIGH", "MEDIUM", "LOW"
+
+
+class TradingAnalysis(BaseModel):
+    """Complete trading analysis with recommendations."""
+
+    summary: str  # Overall market analysis summary
+    trade_recommendations: List[TradeRecommendation]
+    market_outlook: str  # Bull/Bear/Neutral with reasoning
+    risk_assessment: str  # Risk factors identified
+    # Configure structured output LLM for final recommendations
 
 
 @dataclass
@@ -51,20 +68,7 @@ class Position:
 
     @property
     def total_return(self) -> float:
-        return (
-            (self.current_price - self.avg_cost) / self.avg_cost * 100
-            if self.avg_cost > 0
-            else 0.0
-        )
-
-
-@dataclass
-class TradeAction:
-    action: str  # "BUY" or "SELL"
-    symbol: str
-    shares: float
-    price: float
-    reasoning: str
+        return (self.current_price - self.avg_cost) / self.avg_cost * 100 if self.avg_cost > 0 else 0.0
 
 
 # Define the graph state
@@ -76,6 +80,7 @@ class TradingState(Dict):
     analysis_complete: bool
     trading_complete: bool
     tool_call_count: int
+    structured_analysis: Optional[TradingAnalysis] = None  # Structured output from LLM
 
 
 @tool
@@ -110,11 +115,7 @@ def run_sql(query: str) -> str:
         cursor.execute(query)
 
         # Get column names
-        columns = (
-            [description[0] for description in cursor.description]
-            if cursor.description
-            else []
-        )
+        columns = [description[0] for description in cursor.description] if cursor.description else []
 
         # Fetch results
         rows = cursor.fetchall()
@@ -149,9 +150,7 @@ def search_market_news(query: str) -> str:
     try:
         search = TavilySearchResults(max_results=3)
         results = search.invoke(query)
-        return json.dumps(
-            {"success": True, "query": query, "results": results}, indent=2
-        )
+        return json.dumps({"success": True, "query": query, "results": results}, indent=2)
     except Exception as e:
         return json.dumps(
             {
@@ -189,55 +188,92 @@ def initialize_agent_node(state: TradingState) -> TradingState:
     return state
 
 
-def market_analysis_node(state: TradingState) -> TradingState:
-    """Analyze market data and make trading decisions."""
-    # The LLM will respond with tool calls, which will be handled by the tool node
-    response = llm_with_tools.invoke(state["messages"])
-    state["messages"].append(response)
+def create_market_analysis_node(llm_with_tools):
+    """Create the market analysis node with the configured LLM."""
 
-    return state
+    def market_analysis_node(state: TradingState) -> TradingState:
+        """Analyze market data and make trading decisions."""
+        # The LLM will respond with tool calls, which will be handled by the tool node
+        response = llm_with_tools.invoke(state["messages"])
+        state["messages"].append(response)
+        return state
 
-
-def tools_node_wrapper(state: TradingState) -> TradingState:
-    """Execute tools and increment the tool call counter."""
-    # Count how many tool calls we're about to make, or how many iterations so far
-    last_message = state["messages"][-1]
-    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        state["tool_call_count"] += 1  # len(last_message.tool_calls)
-
-    # Execute the tools
-    result = tool_node.invoke(state)
-
-    # Ensure the counter is preserved in the result
-    result["tool_call_count"] = state["tool_call_count"]
-
-    return result
+    return market_analysis_node
 
 
-def recommend_trades_node(state: TradingState) -> TradingState:
-    """Provide final summary of recommendations."""
-    # Find the last AI message that contains recommendations
-    recommendations_text = ""
-    for msg in reversed(state["messages"]):
-        if isinstance(msg, AIMessage):
-            recommendations_text = msg.content
-            break
+def create_tools_node_wrapper(tool_node):
+    """Create the tools node wrapper with the configured tool node."""
 
-    summary = prompts.get_summary_prompt(
-        portfolio_cash=state["portfolio_cash"],
-        portfolio_positions=state["portfolio_positions"],
-        recommendations_text=recommendations_text,
-    )
+    def tools_node_wrapper(state: TradingState) -> TradingState:
+        """Execute tools and increment the tool call counter."""
+        # Count how many tool calls we're about to make, or how many iterations so far
+        last_message = state["messages"][-1]
+        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            state["tool_call_count"] += 1  # len(last_message.tool_calls)
 
-    state["messages"].append(AIMessage(content=summary))
+        # Execute the tools
+        result = tool_node.invoke(state)
 
-    return state
+        # Ensure the counter is preserved in the result
+        result["tool_call_count"] = state["tool_call_count"]
+        return result
+
+    return tools_node_wrapper
 
 
-# Tool setup
-tools = [run_sql, search_market_news]
-tool_node = ToolNode(tools)
-llm_with_tools = llm.bind_tools(tools)
+def create_recommend_trades_node(structured_llm):
+    """Create the recommend trades node with the configured structured LLM."""
+
+    def recommend_trades_node(state: TradingState) -> TradingState:
+        """Provide final structured recommendations."""
+        # Collect analysis context from previous messages
+        analysis_context = ""
+        for msg in state["messages"]:
+            if isinstance(msg, AIMessage) and msg.content:
+                analysis_context += msg.content + "\n\n"
+
+        # Get structured analysis prompt
+        structured_prompt = prompts.get_structured_analysis_prompt(
+            portfolio_cash=state["portfolio_cash"],
+            portfolio_positions=state["portfolio_positions"],
+            analysis_context=analysis_context[-2000:],  # Limit context length
+        )
+
+        # Get structured output from LLM
+        structured_analysis = structured_llm.invoke([HumanMessage(content=structured_prompt)])
+
+        # Store the structured analysis in state for later use
+        state["structured_analysis"] = structured_analysis
+
+        # Create a human-readable summary message
+        summary_text = f"""
+🎯 TRADING ANALYSIS COMPLETE
+
+📊 Market Analysis Summary:
+{structured_analysis.summary}
+
+🎯 Market Outlook: {structured_analysis.market_outlook}
+
+⚠️ Risk Assessment: {structured_analysis.risk_assessment}
+
+📋 Trade Recommendations ({len(structured_analysis.trade_recommendations)} recommendations):
+"""
+
+        for i, rec in enumerate(structured_analysis.trade_recommendations, 1):
+            price_str = f"${rec.price:.2f}" if rec.price else "N/A"
+            summary_text += f"""{i}. {rec.action} {rec.symbol or "N/A"}
+- Shares: {rec.shares or "N/A"}
+- Target Price: {price_str}
+- Confidence: {rec.confidence or "N/A"}
+- Reasoning: {rec.reasoning}
+
+"""
+
+        summary_text += "✅ Analysis session completed!"
+        state["messages"].append(AIMessage(content=summary_text))
+        return state
+
+    return recommend_trades_node
 
 
 # Define routing logic
@@ -245,40 +281,55 @@ def should_continue(state: TradingState):
     last_message = state["messages"][-1]
 
     # If the last message has tool calls, and we haven't reached the tool call limit, go to tools
-    if (
-        hasattr(last_message, "tool_calls")
-        and last_message.tool_calls
-        and state["tool_call_count"] < config.MAX_TOOL_CALLS
-    ):
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls and state["tool_call_count"] < config.MAX_TOOL_CALLS:
         print(f"Tool call count: {state['tool_call_count']}")
         return "tools"
     # Otherwise go to recommend_trades (analysis is complete)
     return "recommend_trades"
 
 
-# Build the graph
-workflow = StateGraph(TradingState)
+def main():
+    """Main application entry point"""
+    # Load environment variables
+    load_dotenv()
 
-# Add nodes
-workflow.add_node("initialize_agent", initialize_agent_node)
-workflow.add_node("market_analysis", market_analysis_node)
-workflow.add_node("recommend_trades", recommend_trades_node)
-workflow.add_node("tools", tools_node_wrapper)
+    # Setup logging
+    config.setup_logging()
 
-# Add edges
-workflow.set_entry_point("initialize_agent")
-workflow.add_edge("initialize_agent", "market_analysis")
-workflow.add_conditional_edges("market_analysis", should_continue)
-workflow.add_edge("tools", "market_analysis")
-workflow.add_edge("recommend_trades", END)
+    # Configure the LLM
+    llm = ChatOpenAI(model=config.LLM_MODEL, temperature=config.LLM_TEMPERATURE)
+    structured_llm = llm.with_structured_output(TradingAnalysis)
 
+    # Tool setup
+    tools = [run_sql, search_market_news]
+    tool_node = ToolNode(tools)
+    llm_with_tools = llm.bind_tools(tools)
 
-# Compile the graph
-app = workflow.compile()
+    # Build the graph
+    workflow = StateGraph(TradingState)
 
+    # Create node functions with dependencies
+    market_analysis_node = create_market_analysis_node(llm_with_tools)
+    tools_node_wrapper = create_tools_node_wrapper(tool_node)
+    recommend_trades_node = create_recommend_trades_node(structured_llm)
 
-def run_trading_agent():
-    """Run the LangGraph trading agent."""
+    # Add nodes
+    workflow.add_node("initialize_agent", initialize_agent_node)
+    workflow.add_node("market_analysis", market_analysis_node)
+    workflow.add_node("recommend_trades", recommend_trades_node)
+    workflow.add_node("tools", tools_node_wrapper)
+
+    # Add edges
+    workflow.set_entry_point("initialize_agent")
+    workflow.add_edge("initialize_agent", "market_analysis")
+    workflow.add_conditional_edges("market_analysis", should_continue)
+    workflow.add_edge("tools", "market_analysis")
+    workflow.add_edge("recommend_trades", END)
+
+    # Compile the graph
+    app = workflow.compile()
+
+    # Run the LangGraph trading agent
     print("🚀 Starting LangGraph Trading Agent...")
     print("=" * 80)
 
@@ -291,27 +342,30 @@ def run_trading_agent():
         analysis_complete=False,
         trading_complete=False,
         tool_call_count=0,
+        structured_analysis=None,
     )
 
-    try:
-        # Run the graph
-        for step in app.stream(initial_state, config={"recursion_limit": 50}):
-            for node_name, state in step.items():
-                if node_name != "tools":  # Don't print tool outputs directly
-                    print(f"\n--- {node_name.upper()} ---")
-                    if state["messages"]:
-                        last_msg = state["messages"][-1]
-                        print(last_msg.content)
-                    print("-" * 40)
+    final_state = None
 
-        print("\n✅ Trading session completed successfully!")
+    # Run the graph
+    for step in app.stream(initial_state, config={"recursion_limit": 50}):
+        for node_name, state in step.items():
+            final_state = state  # Keep track of final state
+            if node_name != "tools":  # Don't print tool outputs directly
+                print(f"\n--- {node_name.upper()} ---")
+                if state["messages"]:
+                    last_msg = state["messages"][-1]
+                    print(last_msg.content)
+                print("-" * 40)
 
-    except Exception as e:
-        print(f"❌ Error running trading agent: {e}")
-        import traceback
+    print("\n✅ Trading session completed successfully!")
 
-        traceback.print_exc()
+    # Return structured output directly
+    assert final_state, "Final state must exist"
+    structured_analysis = final_state["structured_analysis"]
+    assert structured_analysis, "Structured analysis must be present in final state"
+    return structured_analysis
 
 
 if __name__ == "__main__":
-    run_trading_agent()
+    main()

@@ -216,6 +216,49 @@ Current portfolio status:
 
 
 
+def get_structured_analysis_prompt(
+    portfolio_cash: float,
+    portfolio_positions: dict,
+    analysis_context: str
+) -> str:
+    """
+    Get the prompt for structured trading analysis output.
+
+    Args:
+        portfolio_cash: Available cash amount
+        portfolio_positions: Current stock positions
+        analysis_context: Context from previous analysis steps
+
+    Returns:
+        Formatted prompt for structured output
+    """
+    return f"""Based on your comprehensive market analysis, provide a complete structured trading analysis.
+
+Current Portfolio Context:
+- Cash Available: ${portfolio_cash:.2f}
+- Current Positions: {portfolio_positions}
+- Max Positions: {config.MAX_POSITIONS}
+
+Analysis Context from your research:
+{analysis_context}
+
+Please provide:
+
+1. **Summary**: A concise overview of your market analysis and key findings
+2. **Trade Recommendations**: Specific actionable trades with:
+   - Action: BUY, SELL, or HOLD
+   - Symbol: Stock ticker (if applicable)
+   - Shares: Number of shares to trade
+   - Price: Target price or current price
+   - Reasoning: Detailed justification for the recommendation
+   - Confidence: HIGH, MEDIUM, or LOW confidence level
+
+3. **Market Outlook**: Overall market sentiment (Bull/Bear/Neutral) with reasoning
+4. **Risk Assessment**: Key risks and concerns identified in your analysis
+
+Focus on providing actionable, specific recommendations based on your research. If no trades are recommended, explain why the current portfolio is optimal."""
+
+
 def get_summary_prompt(
     portfolio_cash: float, portfolio_positions: dict, recommendations_text: str
 ) -> str:

@@ -16,13 +16,7 @@ from database import StockDatabase
 from nasdaq_fetcher import NasdaqStockFetcher
 from stock_fetcher import StockFetcher
 
-# Setup logging
-config.setup_logging()
 logger = logging.getLogger(__name__)
-
-# Reduce yfinance logging noise
-logging.getLogger("yfinance").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
 def init_portfolio():
@@ -95,10 +89,7 @@ def update_portfolio_values():
         value_change = new_value - old_value
         total_value_change += value_change
 
-        logger.info(
-            f"{symbol}: {shares} shares @ ${current_price:.2f} = ${new_value:.2f} "
-            f"({value_change:+.2f}) [{date}]"
-        )
+        logger.info(f"{symbol}: {shares} shares @ ${current_price:.2f} = ${new_value:.2f} ({value_change:+.2f}) [{date}]")
 
         # Update portfolio
         portfolio["positions"] = updated_positions
@@ -126,47 +117,45 @@ def update_portfolio_values():
 
 def main():
     """Main application entry point"""
-    try:
-        logger.info("NASDAQ Stock Database Builder")
-        logger.info(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    # Setup logging
+    config.setup_logging()
 
-        # Initialize components
-        nasdaq_fetcher = NasdaqStockFetcher()
-        db = StockDatabase()
-        fetcher = StockFetcher(db)
+    # Reduce yfinance logging noise
+    logging.getLogger("yfinance").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-        # Fetch NASDAQ 100 stock list
-        nasdaq_stocks = nasdaq_fetcher.get_nasdaq_stocks()
-        symbols = [stock["symbol"] for stock in nasdaq_stocks if stock["symbol"]]
+    logger.info("NASDAQ Stock Database Builder")
+    logger.info(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # Download and store NASDAQ 100 data
-        logger.info("Downloading NASDAQ 100 stock data...")
-        fetcher.fetch_stocks(symbols)
+    # Initialize components
+    nasdaq_fetcher = NasdaqStockFetcher()
+    db = StockDatabase()
+    fetcher = StockFetcher(db)
 
-        # Show final stats
-        stats = db.get_database_stats()
-        logger.info("=" * 50)
-        logger.info("DATABASE STATISTICS")
-        logger.info("=" * 50)
-        logger.info(f"Total stocks: {stats['total_stocks']:,}")
-        logger.info(f"Price records: {stats['price_records']:,}")
-        logger.info(
-            f"Date range: {stats['date_range']['start']} to {stats['date_range']['end']}"
-        )
-        logger.info(f"Database size: {stats['db_size_mb']} MB")
-        logger.info("=" * 50)
+    # Fetch NASDAQ 100 stock list
+    nasdaq_stocks = nasdaq_fetcher.get_nasdaq_stocks()
+    symbols = [stock["symbol"] for stock in nasdaq_stocks if stock["symbol"]]
 
-        # Update portfolio values with latest prices
-        logger.info("Updating portfolio with latest stock prices...")
-        update_portfolio_values()
+    # Download and store NASDAQ 100 data
+    logger.info("Downloading NASDAQ 100 stock data...")
+    fetcher.fetch_stocks(symbols)
 
-        logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    # Show final stats
+    stats = db.get_database_stats()
+    logger.info("=" * 50)
+    logger.info("DATABASE STATISTICS")
+    logger.info("=" * 50)
+    logger.info(f"Total stocks: {stats['total_stocks']:,}")
+    logger.info(f"Price records: {stats['price_records']:,}")
+    logger.info(f"Date range: {stats['date_range']['start']} to {stats['date_range']['end']}")
+    logger.info(f"Database size: {stats['db_size_mb']} MB")
+    logger.info("=" * 50)
 
-    except KeyboardInterrupt:
-        logger.info("Operation cancelled by user")
-    except Exception as e:
-        logger.error(f"Application error: {e}")
-        raise
+    # Update portfolio values with latest prices
+    logger.info("Updating portfolio with latest stock prices...")
+    update_portfolio_values()
+
+    logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":

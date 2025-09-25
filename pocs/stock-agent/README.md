@@ -1,6 +1,6 @@
 # Stock Trading Agent
 
-AI-powered stock trading agent built with LangGraph that analyzes NASDAQ 100 stocks and makes trading recommendations.
+AI-powered stock trading agent built with LangGraph that analyzes NASDAQ 100 stocks and makes trading recommendations using comprehensive historical data and real-time market news.
 
 ## Scripts
 
@@ -26,8 +26,12 @@ python agent.py
 
 ## Features
 
-- 3 years of NASDAQ 100 historical data
-- Fundamental and technical analysis
-- Market news integration
-- Portfolio tracking and optimization
-- SQLite database with comprehensive stock metrics
+- **Historical Analysis**: 3 years of NASDAQ 100 stock data (OHLCV, fundamentals, statistics)
+- **Market Intelligence**: Real-time news integration via web search
+- **Portfolio Management**: Track positions, cash, and performance ($1000 starting capital)
+- **Trading Constraints**: Long-only strategy, max 10 positions
+- **Data Storage**: Local SQLite database for fast analysis
+
+## Output
+
+The agent provides detailed market analysis and specific buy/sell recommendations with reasoning based on technical indicators, fundamental metrics, and current market conditions.
