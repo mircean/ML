@@ -115,6 +115,7 @@ class ConcurAuthenticator:
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "grant_type": "password",
+                # "grant_type": "client_credentials",
                 "username": self.company_uuid,
                 "password": self.request_token,
                 "credtype": "authtoken",

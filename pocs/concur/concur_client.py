@@ -6,7 +6,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import requests
-from auth import ConcurAuthenticator
+from concur_auth import ConcurAuthenticator
 
 logger = logging.getLogger(__name__)
 

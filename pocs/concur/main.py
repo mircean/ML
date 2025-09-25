@@ -7,54 +7,13 @@ import logging
 import os
 import sys
 
-from concur_auth import ConcurAuthenticator
-from concur_client import ConcurClient
 from dotenv import load_dotenv
 
+import config
+from concur_auth import ConcurAuthenticator
+from concur_client import ConcurClient
+
 logger = logging.getLogger(__name__)
-
-
-def setup_logging(log_level: str = "INFO"):
-    """Setup logging configuration."""
-    logging.basicConfig(level=getattr(logging, log_level.upper()), format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-
-
-def load_config():
-    """Load configuration from environment variables."""
-    load_dotenv()
-
-    base_required_vars = ["CONCUR_CLIENT_ID", "CONCUR_CLIENT_SECRET", "CONCUR_BASE_URL"]
-
-    config = {}
-    missing_vars = []
-
-    for var in base_required_vars:
-        value = os.getenv(var)
-        if not value:
-            missing_vars.append(var)
-        config[var.lower()] = value
-
-    # Check for authentication method
-    has_username_password = os.getenv("CONCUR_USERNAME") and os.getenv("CONCUR_PASSWORD")
-    has_company_token = os.getenv("CONCUR_COMPANY_UUID") and os.getenv("CONCUR_REQUEST_TOKEN")
-
-    if not has_username_password and not has_company_token:
-        missing_vars.extend(["Either (CONCUR_USERNAME + CONCUR_PASSWORD) or (CONCUR_COMPANY_UUID + CONCUR_REQUEST_TOKEN)"])
-
-    if missing_vars:
-        logging.error(f"Missing required environment variables: {', '.join(missing_vars)}")
-        logging.error("For SSO users, use CONCUR_COMPANY_UUID and CONCUR_REQUEST_TOKEN")
-        logging.error("For regular users, use CONCUR_USERNAME and CONCUR_PASSWORD")
-        sys.exit(1)
-
-    # Load optional authentication variables
-    config["concur_username"] = os.getenv("CONCUR_USERNAME")
-    config["concur_password"] = os.getenv("CONCUR_PASSWORD")
-    config["concur_company_uuid"] = os.getenv("CONCUR_COMPANY_UUID")
-    config["concur_request_token"] = os.getenv("CONCUR_REQUEST_TOKEN")
-    config["log_level"] = os.getenv("LOG_LEVEL", "INFO")
-
-    return config
 
 
 def filter_expenses_requiring_receipts(expenses):
@@ -70,7 +29,11 @@ def filter_expenses_requiring_receipts(expenses):
     receipt_required_expenses = []
 
     for expense in expenses:
-        requires_receipt = expense.get("isImageRequired", False) or expense.get("isPaperReceiptRequired", False) or expense.get("receiptRequired", False)
+        requires_receipt = (
+            expense.get("isImageRequired", False)
+            or expense.get("isPaperReceiptRequired", False)
+            or expense.get("receiptRequired", False)
+        )
 
         if requires_receipt:
             receipt_required_expenses.append(expense)
@@ -127,26 +90,50 @@ def get_reports_with_missing_receipts(client):
             logger.error(f"Failed to get expenses for report {report_id}: {e}")
             continue
 
-    logger.info(f"Found {len(reports_with_missing_receipts)} reports with expenses requiring receipts")
+    logger.info(
+        f"Found {len(reports_with_missing_receipts)} reports with expenses requiring receipts"
+    )
     return reports_with_missing_receipts
 
 
 def main():
     """Main application entry point."""
-    config = load_config()
-    setup_logging(config["log_level"])
+    load_dotenv()
+
+    # Check required environment variables
+    client_id = os.getenv("CONCUR_CLIENT_ID")
+    client_secret = os.getenv("CONCUR_CLIENT_SECRET")
+    base_url = os.getenv("CONCUR_BASE_URL")
+
+    assert client_id and client_secret and base_url, (
+        "Missing required environment variables: CONCUR_CLIENT_ID, CONCUR_CLIENT_SECRET, CONCUR_BASE_URL"
+    )
+
+    # Check for authentication method
+    has_username_password = os.getenv("CONCUR_USERNAME") and os.getenv(
+        "CONCUR_PASSWORD"
+    )
+    has_company_token = os.getenv("CONCUR_COMPANY_UUID") and os.getenv(
+        "CONCUR_REQUEST_TOKEN"
+    )
+
+    assert has_username_password or has_company_token, (
+        "Missing authentication: Either (CONCUR_USERNAME + CONCUR_PASSWORD) or (CONCUR_COMPANY_UUID + CONCUR_REQUEST_TOKEN)"
+    )
+
+    config.setup_logging()
 
     logger.info("Starting Concur expense report receipt checker")
 
     try:
         authenticator = ConcurAuthenticator(
-            client_id=config["concur_client_id"],
-            client_secret=config["concur_client_secret"],
-            base_url=config["concur_base_url"],
-            username=config["concur_username"],
-            password=config["concur_password"],
-            company_uuid=config["concur_company_uuid"],
-            request_token=config["concur_request_token"],
+            client_id=client_id,
+            client_secret=client_secret,
+            base_url=base_url,
+            username=os.getenv("CONCUR_USERNAME"),
+            password=os.getenv("CONCUR_PASSWORD"),
+            company_uuid=os.getenv("CONCUR_COMPANY_UUID"),
+            request_token=os.getenv("CONCUR_REQUEST_TOKEN"),
         )
 
         client = ConcurClient(authenticator)
@@ -158,24 +145,35 @@ def main():
             logger.info("✅ No active expense reports found with missing receipts!")
             return
 
-        logger.info(f"📋 Found {len(reports_with_missing_receipts)} expense reports with missing receipts:")
+        logger.info(
+            f"📋 Found {len(reports_with_missing_receipts)} expense reports with missing receipts:"
+        )
         logger.info("-" * 80)
 
         for report_data in reports_with_missing_receipts:
             logger.info(f"📊 Report: {report_data['report_name']}")
             logger.info(f"   ID: {report_data['report_id']}")
-            logger.info(f"   Total: {report_data['report_currency']} {report_data['report_total']}")
+            logger.info(
+                f"   Total: {report_data['report_currency']} {report_data['report_total']}"
+            )
             logger.info(f"   Created: {report_data['creation_date']}")
-            logger.info(f"   Expenses needing receipts: {len(report_data['expenses_needing_receipts'])}")
+            logger.info(
+                f"   Expenses needing receipts: {len(report_data['expenses_needing_receipts'])}"
+            )
 
             for expense in report_data["expenses_needing_receipts"]:
                 logger.info(format_expense_info(expense))
 
             logger.info("-" * 80)
 
-        total_expenses_needing_receipts = sum(len(report["expenses_needing_receipts"]) for report in reports_with_missing_receipts)
+        total_expenses_needing_receipts = sum(
+            len(report["expenses_needing_receipts"])
+            for report in reports_with_missing_receipts
+        )
 
-        logger.info(f"🔍 Summary: {total_expenses_needing_receipts} total expenses requiring receipts across {len(reports_with_missing_receipts)} reports")
+        logger.info(
+            f"🔍 Summary: {total_expenses_needing_receipts} total expenses requiring receipts across {len(reports_with_missing_receipts)} reports"
+        )
 
     except Exception as e:
         logger.error(f"Application failed: {e}")

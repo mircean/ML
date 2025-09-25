@@ -7,46 +7,12 @@ import logging
 import os
 import sys
 
+import config
 from dotenv import load_dotenv
 from outlook_auth import OutlookAuthenticator
 from outlook_client import OutlookClient
 
 logger = logging.getLogger(__name__)
-
-
-def setup_logging(log_level: str = "INFO"):
-    """Setup logging configuration."""
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-
-
-def load_config():
-    """Load configuration from environment variables."""
-    load_dotenv()
-
-    required_vars = ["GRAPH_TENANT_ID", "GRAPH_CLIENT_ID"]
-
-    config = {}
-    missing_vars = []
-
-    for var in required_vars:
-        value = os.getenv(var)
-        if not value:
-            missing_vars.append(var)
-        config[var.lower()] = value
-
-    if missing_vars:
-        logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
-        sys.exit(1)
-
-    config["scopes"] = ["Mail.Read"]
-    config["message_limit"] = int(os.getenv("MESSAGE_LIMIT", "10"))
-    config["log_level"] = os.getenv("LOG_LEVEL", "INFO")
-
-    return config
 
 
 def format_message_info(message):
@@ -65,35 +31,32 @@ def format_message_info(message):
         "sender_email": sender_email,
         "subject": message.get("subject"),
         "preview": preview,
-        "has_attachments": message.get("hasAttachments", False)
+        "has_attachments": message.get("hasAttachments", False),
     }
 
 
 def main():
     """Main application entry point."""
-    config = load_config()
-    setup_logging(config["log_level"])
+    load_dotenv()
+
+    # Check required environment variables
+    tenant_id = os.getenv("GRAPH_TENANT_ID")
+    client_id = os.getenv("GRAPH_CLIENT_ID")
+    assert tenant_id and client_id, "Missing required environment variables: GRAPH_TENANT_ID, GRAPH_CLIENT_ID"
+
+    config.setup_logging()
 
     logger.info("Starting email reader")
 
     try:
-        authenticator = OutlookAuthenticator(
-            tenant_id=config["graph_tenant_id"],
-            client_id=config["graph_client_id"],
-            scopes=config["scopes"]
-        )
+        authenticator = OutlookAuthenticator(tenant_id=tenant_id, client_id=client_id, scopes=config.SCOPES)
 
         client = OutlookClient(authenticator)
 
-        select_fields = [
-            "subject", "from", "receivedDateTime", "isRead",
-            "hasAttachments", "bodyPreview"
-        ]
+        select_fields = ["subject", "from", "receivedDateTime", "isRead", "hasAttachments", "bodyPreview"]
 
-        messages = client.get_messages(
-            limit=config["message_limit"],
-            select_fields=select_fields
-        )
+        message_limit = int(os.getenv("MESSAGE_LIMIT", str(config.MESSAGE_LIMIT)))
+        messages = client.get_messages(limit=message_limit, select_fields=select_fields)
 
         if not messages:
             logger.info("No messages found")
@@ -110,10 +73,7 @@ def main():
             logger.info(f"Preview: {info['preview']!r}")
 
             if info["has_attachments"]:
-                attachments = client.get_message_attachments(
-                    message["id"],
-                    select_fields=["name", "contentType", "size"]
-                )
+                attachments = client.get_message_attachments(message["id"], select_fields=["name", "contentType", "size"])
 
                 if attachments:
                     logger.info("Attachments:")
@@ -125,6 +85,12 @@ def main():
 
             logger.info("-" * 80)
 
+        client.send_email(
+            to="mircean@outlook.com",
+            subject="Test Email",
+            body="Hello from Python!",
+            body_type="Text",  # or "HTML"
+        )
     except Exception as e:
         logger.error(f"Application failed: {e}")
         sys.exit(1)
@@ -132,5 +98,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
