@@ -282,7 +282,7 @@ def should_continue(state: TradingState):
 
     # If the last message has tool calls, and we haven't reached the tool call limit, go to tools
     if hasattr(last_message, "tool_calls") and last_message.tool_calls and state["tool_call_count"] < config.MAX_TOOL_CALLS:
-        print(f"Tool call count: {state['tool_call_count']}")
+        logger.info(f"Tool call count: {state['tool_call_count']}")
         return "tools"
     # Otherwise go to recommend_trades (analysis is complete)
     return "recommend_trades"
@@ -330,8 +330,8 @@ def main():
     app = workflow.compile()
 
     # Run the LangGraph trading agent
-    print("🚀 Starting LangGraph Trading Agent...")
-    print("=" * 80)
+    logger.info("🚀 Starting LangGraph Trading Agent...")
+    logger.info("=" * 80)
 
     # Initialize state
     initial_state = TradingState(
@@ -352,13 +352,13 @@ def main():
         for node_name, state in step.items():
             final_state = state  # Keep track of final state
             if node_name != "tools":  # Don't print tool outputs directly
-                print(f"\n--- {node_name.upper()} ---")
+                logger.info(f"\n--- {node_name.upper()} ---")
                 if state["messages"]:
                     last_msg = state["messages"][-1]
-                    print(last_msg.content)
-                print("-" * 40)
+                    logger.info(last_msg.content)
+                logger.info("-" * 40)
 
-    print("\n✅ Trading session completed successfully!")
+    logger.info("\n✅ Trading session completed successfully!")
 
     # Return structured output directly
     assert final_state, "Final state must exist"
