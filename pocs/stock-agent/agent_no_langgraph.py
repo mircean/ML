@@ -78,8 +78,12 @@ class TradingAgent:
         self.tool_call_count: int = 0
         self.structured_analysis: Optional[TradingAnalysis] = None
 
-        # Configure LLMs
-        self.llm = ChatOpenAI(model=config.LLM_MODEL, temperature=config.LLM_TEMPERATURE)
+        # Configure LLMs with deterministic settings
+        self.llm = ChatOpenAI(
+            model=config.LLM_MODEL,
+            temperature=config.LLM_TEMPERATURE,
+            seed=config.LLM_SEED
+        )
         self.structured_llm = self.llm.with_structured_output(TradingAnalysis)
 
         # Bind tools to LLM

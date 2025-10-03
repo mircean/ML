@@ -296,8 +296,12 @@ def main():
     # Setup logging
     config.setup_logging()
 
-    # Configure the LLM
-    llm = ChatOpenAI(model=config.LLM_MODEL, temperature=config.LLM_TEMPERATURE)
+    # Configure the LLM with deterministic settings
+    llm = ChatOpenAI(
+        model=config.LLM_MODEL,
+        temperature=config.LLM_TEMPERATURE,
+        seed=config.LLM_SEED
+    )
     structured_llm = llm.with_structured_output(TradingAnalysis)
 
     # Tool setup

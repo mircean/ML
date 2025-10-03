@@ -190,13 +190,36 @@ Do not neccesarily use all the cash to buy stocks, buy only stocks that are wort
 You have access to web search tools for additional market research.
 
 **ANALYSIS PROCESS:**
-After each tool call, reflect on what you learned and think through:
-- What do the results tell you about market conditions?
-- Which stocks look most promising based on fundamentals and momentum?
-- Are there any risks or concerns you should consider?
-- Do you need more information before making decisions?
+Follow this EXACT sequence for consistent analysis:
 
-Continue using tools to gather comprehensive data until you can make confident trading recommendations.
+1. First, identify the latest trading date in the database
+2. Query current portfolio performance vs benchmarks
+3. Calculate 6-month momentum for all NASDAQ-100 stocks
+4. Filter top 20 momentum leaders, get their fundamentals
+5. Rank candidates using this scoring system:
+   - Momentum score (0-100): Position in 6-month return ranking
+   - Quality score (0-100): Based on ROE, profit margins, debt levels
+   - Technical score (0-100): Price vs 50-day and 200-day moving averages
+   - Composite score = (Momentum × 0.4) + (Quality × 0.4) + (Technical × 0.2)
+
+   IMPORTANT: Display scores for current holdings and top alternatives in your analysis
+
+6. Make decisions using these RULES:
+   - SELL any holding with composite score < 60
+   - HOLD positions with composite score ≥ 60
+   - SWAP: Replace current holding if a non-held candidate scores 15+ points higher
+     (e.g., sell holding with score 70 to buy candidate with score 90)
+   - BUY highest-scoring candidates not currently held (if cash available)
+   - Maximum 3 positions, focus on top composite scores
+
+After each tool call, state: "Analysis step X complete. Next: [specific next step]"
+
+When you calculate scores, present them in this format:
+CURRENT HOLDINGS:
+- SYMBOL: Composite XX.X (Momentum: XX.X, Quality: XX.X, Technical: XX.X)
+
+TOP ALTERNATIVES:
+- SYMBOL: Composite XX.X (Momentum: XX.X, Quality: XX.X, Technical: XX.X) - [Brief reason]
 
 Please use the available tools:
 1. Use `run_sql` to execute SQL queries against this database to answer user questions about stocks, financial metrics, price movements, and market analysis.
@@ -253,10 +276,19 @@ Please provide:
    - Reasoning: Detailed justification for the recommendation
    - Confidence: HIGH, MEDIUM, or LOW confidence level
 
-3. **Market Outlook**: Overall market sentiment (Bull/Bear/Neutral) with reasoning
-4. **Risk Assessment**: Key risks and concerns identified in your analysis
+3. **Current Holdings Analysis**: For each current position, show:
+   - Symbol and composite score
+   - Score breakdown (Momentum/Quality/Technical)
+   - Recommendation (HOLD/SELL) with reasoning
 
-Focus on providing actionable, specific recommendations based on your research. If no trades are recommended, explain why the current portfolio is optimal."""
+4. **Top Alternative Candidates**: Show top 3 highest-scoring stocks NOT currently held:
+   - Symbol, composite score, and score breakdown
+   - Brief rationale for why they scored highly
+
+5. **Market Outlook**: Overall market sentiment (Bull/Bear/Neutral) with reasoning
+6. **Risk Assessment**: Key risks and concerns identified in your analysis
+
+Focus on providing actionable, specific recommendations based on your research. Include all composite scores for transparency. If no trades are recommended, explain why the current portfolio is optimal."""
 
 
 def get_summary_prompt(

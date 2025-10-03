@@ -16,7 +16,9 @@ DEFAULT_CASH: Final[float] = 1000.0
 
 # Model settings
 LLM_MODEL: Final[str] = "gpt-5"
-LLM_TEMPERATURE: Final[float] = 0.1
+# LLM_TEMPERATURE: Final[float] = 0.1 # Original value
+LLM_TEMPERATURE: Final[float] = 0.0  # Maximum determinism
+LLM_SEED: Final[int] = 12345  # Fixed seed for reproducible results
 
 # Logging
 LOG_LEVEL: Final[str] = "INFO"

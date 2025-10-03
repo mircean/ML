@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import os
@@ -16,6 +17,16 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Main automation function."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Daily trading automation")
+    parser.add_argument(
+        "--skip-data-download",
+        action="store_true",
+        default=False,
+        help="Skip data synchronization step (default: False)"
+    )
+    args = parser.parse_args()
+
     load_dotenv()
 
     # Check required environment variables for email
@@ -33,13 +44,18 @@ def main():
         logger.info(f"Skipping - Weekend (day {day_of_week})")
         return
 
-    # Step 1: Sync data
-    logger.info("Running data synchronization...")
-    sync_data.main()
+    # Step 1: Sync data (optional)
+    if args.skip_data_download:
+        logger.info("Skipping data synchronization (--skip-data-download flag set)")
+    else:
+        logger.info("Running data synchronization...")
+        sync_data.main()
+        logger.info("Data sync completed successfully")
+
+    # Load portfolio data
     portfolio_path = Path("portfolio.json")
     with open(portfolio_path, "r") as f:
         portfolio = json.load(f)
-    logger.info("Data sync completed successfully")
 
     # Step 2: Run trading agent
     logger.info("Running trading agent...")
