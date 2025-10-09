@@ -162,21 +162,21 @@ LIMIT 30;
 """
 
 
-def get_system_prompt(portfolio_cash: float, portfolio_positions: dict) -> str:
+def get_system_prompt(portfolio_cash: float, portfolio_positions: dict, cfg: config.Config) -> str:
     """
     Get the main system prompt for the trading agent.
 
     Args:
         portfolio_cash: Available cash amount
         portfolio_positions: Current stock positions
-        database_schema: Database schema documentation
+        cfg: Configuration object with trading parameters
 
     Returns:
         Formatted system prompt string
     """
     return f"""You are a stock trading agent with the following constraints:
-- Starting capital: ${config.DEFAULT_CASH}
-- Maximum positions: {config.MAX_POSITIONS} stocks  
+- Starting capital: ${cfg.default_cash}
+- Maximum positions: {cfg.max_positions} stocks
 - Strategy: Long-only, buy and hold good stocks, sell inferior stocks
 - Goal: Beat NASDAQ performance
 
@@ -184,10 +184,12 @@ Analyze the market, find good investment opportunities, and make trading decisio
 If you find a stock that is better than any the stocks in current portfolio, sell the inferior stock and buy the better one.
 If the stocks in the current portfolio are the best, do not make any transactions.
 Do not neccesarily use all the cash to buy stocks, buy only stocks that are worth it.
+Avoid excessive trading
 
 {get_database_schema()}
 
 You have access to web search tools for additional market research.
+
 
 **ANALYSIS PROCESS:**
 Follow this EXACT sequence for consistent analysis:
@@ -205,14 +207,13 @@ Follow this EXACT sequence for consistent analysis:
    IMPORTANT: Display scores for current holdings and top alternatives in your analysis
 
 6. Make decisions using these RULES:
-   - SELL any holding with composite score < 60
-   - HOLD positions with composite score ≥ 60
-   - SWAP: Replace current holding if a non-held candidate scores 15+ points higher
-     (e.g., sell holding with score 70 to buy candidate with score 90)
-   - BUY highest-scoring candidates not currently held (if cash available)
-   - Maximum 3 positions, focus on top composite scores
-
-After each tool call, state: "Analysis step X complete. Next: [specific next step]"
+   - No stock more than 30% of portfolio value. Reason: diversification
+   - No stock less than 5% of portfolio value. Reason: avoid positions that are too small to materially impact portfolio performance
+   - SELL a holding if any other holding or alternative scores is significantly better
+   - SELL half of a holding if any other holding or alternative scores better by a decent margin
+   - BUY the top stocks, holdings or alternatives
+   - Buying fractions of shares is not allowed
+   
 
 When you calculate scores, present them in this format:
 CURRENT HOLDINGS:
@@ -223,7 +224,12 @@ TOP ALTERNATIVES:
 
 Please use the available tools:
 1. Use `run_sql` to execute SQL queries against this database to answer user questions about stocks, financial metrics, price movements, and market analysis.
-2. Use search_market_news to get recent market trends and news
+2. Use `search_market_news` to get recent market trends and news
+3. Use `retrieve_last_N_days_of_analysis` to check a history of the analysis for specific stocks to identify trends and patterns (e.g., "Has NVDA been consistently strong over the last 5 days?")
+
+Consider checking recent news and trends in previous analysis before making decisions, do not rely solely on the database queries
+
+IMPORTANT: Before each tool use, explain what information you need and why you're choosing that specific tool and query. Think strategically about what data will help you make better trading decisions.
 
 Keep analyzing and researching systematically. After each tool use, provide your analysis of the results and explain what additional information you might need.
 
@@ -238,12 +244,7 @@ Current portfolio status:
 """
 
 
-
-def get_structured_analysis_prompt(
-    portfolio_cash: float,
-    portfolio_positions: dict,
-    analysis_context: str
-) -> str:
+def get_trading_analysis_prompt(portfolio_cash: float, portfolio_positions: dict, analysis_context: str, cfg: config.Config) -> str:
     """
     Get the prompt for structured trading analysis output.
 
@@ -251,6 +252,7 @@ def get_structured_analysis_prompt(
         portfolio_cash: Available cash amount
         portfolio_positions: Current stock positions
         analysis_context: Context from previous analysis steps
+        cfg: Configuration object with trading parameters
 
     Returns:
         Formatted prompt for structured output
@@ -260,7 +262,7 @@ def get_structured_analysis_prompt(
 Current Portfolio Context:
 - Cash Available: ${portfolio_cash:.2f}
 - Current Positions: {portfolio_positions}
-- Max Positions: {config.MAX_POSITIONS}
+- Max Positions: {cfg.max_positions}
 
 Analysis Context from your research:
 {analysis_context}
@@ -276,14 +278,13 @@ Please provide:
    - Reasoning: Detailed justification for the recommendation
    - Confidence: HIGH, MEDIUM, or LOW confidence level
 
-3. **Current Holdings Analysis**: For each current position, show:
-   - Symbol and composite score
-   - Score breakdown (Momentum/Quality/Technical)
-   - Recommendation (HOLD/SELL) with reasoning
+3. **Current Holdings Scores**: Provide structured scores for ALL current positions:
+   - symbol, composite_score, momentum_score, quality_score, technical_score, current_price, recommendation
 
-4. **Top Alternative Candidates**: Show top 3 highest-scoring stocks NOT currently held:
-   - Symbol, composite score, and score breakdown
-   - Brief rationale for why they scored highly
+4. **Top Alternatives**: Provide structured scores for TOP {cfg.top_alternatives_count} highest-scoring stocks NOT currently held:
+   - symbol, composite_score, momentum_score, quality_score, technical_score, current_price, recommendation
+
+IMPORTANT: These scores will be used for programmatic historical tracking. Ensure all numeric scores are calculated consistently.
 
 5. **Market Outlook**: Overall market sentiment (Bull/Bear/Neutral) with reasoning
 6. **Risk Assessment**: Key risks and concerns identified in your analysis
@@ -291,9 +292,7 @@ Please provide:
 Focus on providing actionable, specific recommendations based on your research. Include all composite scores for transparency. If no trades are recommended, explain why the current portfolio is optimal."""
 
 
-def get_summary_prompt(
-    portfolio_cash: float, portfolio_positions: dict, recommendations_text: str
-) -> str:
+def get_summary_prompt(portfolio_cash: float, portfolio_positions: dict, recommendations_text: str, cfg: config.Config) -> str:
     """
     Get the prompt for the summary/recommendations display.
 
@@ -301,6 +300,7 @@ def get_summary_prompt(
         portfolio_cash: Available cash amount
         portfolio_positions: Current stock positions
         recommendations_text: The AI's final recommendations
+        cfg: Configuration object with trading parameters
 
     Returns:
         Formatted summary string
@@ -310,7 +310,7 @@ def get_summary_prompt(
 
 📊 Portfolio Status:
 - Cash Available: ${portfolio_cash:.2f}
-- Current Positions: {len(portfolio_positions)}/{config.MAX_POSITIONS}
+- Current Positions: {len(portfolio_positions)}/{cfg.max_positions}
 
 📋 FINAL RECOMMENDATIONS:
 {recommendations_text}

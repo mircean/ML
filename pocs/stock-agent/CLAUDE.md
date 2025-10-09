@@ -28,6 +28,12 @@ The SQLite database (`nasdaq_stocks.db`) contains 5 main tables:
 - `stock_statistics`: Trading statistics (52-week highs/lows, moving averages, short interest)
 - `stock_actions`: Corporate actions (splits, dividends)
 
+### Memory System
+The agent memory database (`agent_memory.db`) stores historical analysis:
+- `agent_scores`: Daily stock scores (composite, momentum, quality, technical scores)
+- Automatically updated after each agent run (daily overwrite)
+- Enables trend analysis: "Has NVDA been consistently strong for 5 days?"
+
 ### Key Configuration
 - Maximum tool calls per session: 10 (configurable via `MAX_TOOL_CALLS`)
 - Portfolio limits: Max 10 positions, $1000 starting cash
@@ -75,9 +81,10 @@ The `TradingState` class tracks:
 - Analysis and trading completion flags
 
 ### Tool Integration
-Two main tools are available to the LLM:
+Three main tools are available to the LLM:
 - `run_sql`: Executes SQL queries against the stock database with comprehensive error handling
 - `search_market_news`: Uses Tavily API for web search
+- `retrieve_last_N_days_of_analysis`: Queries historical scores for specific stocks to identify trends
 
 ### Portfolio Management
 - Portfolio data is stored in `portfolio.json`
@@ -99,14 +106,16 @@ The system uses structured prompts with:
 - `prompts.py`: System prompts and database schema documentation
 
 **Data Management:**
-- `database.py`: StockDatabase class for SQLite operations
+- `database.py`: StockDatabase and MemoryDatabase classes for SQLite operations
 - `sync_data.py`: Data downloading and portfolio value updates
 - `schema.sql`: Database table definitions and indexes
+- `schema_memory.sql`: Memory database schema for historical scores
 - `stock_fetcher.py`: yfinance integration for stock data
 - `nasdaq_fetcher.py`: NASDAQ 100 stock list fetching
 
 **Data Files:**
 - `nasdaq_stocks.db`: SQLite database (generated)
+- `agent_memory.db`: Memory database for historical scores (generated)
 - `portfolio.json`: Portfolio state (generated)
 - `log.txt`: Application logs (generated)
 

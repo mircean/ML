@@ -1,24 +1,37 @@
 """
-Configuration constants for the Stock Trading Agent
+Configuration for the Stock Trading Agent
 """
 
+import argparse
 import logging
+from dataclasses import dataclass, fields
 from typing import Final
 
-# Database
+
+# Database and file constants
 DATABASE_PATH: Final[str] = "nasdaq_stocks.db"
+MEMORY_DATABASE_PATH: Final[str] = "agent_memory.db"
 PORTFOLIO_FILE: Final[str] = "portfolio.json"
 
-# Trading limits
-MAX_TOOL_CALLS: Final[int] = 10
-MAX_POSITIONS: Final[int] = 10
-DEFAULT_CASH: Final[float] = 1000.0
 
-# Model settings
-LLM_MODEL: Final[str] = "gpt-5"
-# LLM_TEMPERATURE: Final[float] = 0.1 # Original value
-LLM_TEMPERATURE: Final[float] = 0.0  # Maximum determinism
-LLM_SEED: Final[int] = 12345  # Fixed seed for reproducible results
+@dataclass
+class Config:
+    """Runtime configuration that can be overridden via command line."""
+
+    # Trading limits
+    max_tool_calls: int = 20
+    max_positions: int = 10
+    default_cash: float = 10000.0
+    top_alternatives_count: int = 3  # Number of top alternative stocks to track
+
+    # Agent behavior
+    execute_trades: bool = True  # Whether to actually execute trades and update portfolio file
+    skip_data_download: bool = False  # Skip data synchronization step
+
+    # Model settings
+    llm_model: str = "gpt-5"
+    llm_temperature: float = 0.0  # Maximum determinism
+    llm_seed: int = 12345  # Fixed seed for reproducible results
 
 # Logging
 LOG_LEVEL: Final[str] = "INFO"
@@ -27,6 +40,58 @@ LOG_FILE: Final[str] = "log.txt"
 
 # Email scopes
 SCOPES = ["Mail.Read", "Mail.Send"]
+
+
+def create_config_parser() -> argparse.ArgumentParser:
+    """Create argument parser with options automatically generated from Config class."""
+    parser = argparse.ArgumentParser(description="Stock Trading Agent")
+
+    # Create default config to get default values
+    default_config = Config()
+
+    # Automatically add arguments for each config field
+    for field in fields(Config):
+        field_name = field.name
+        field_type = field.type
+        default_value = getattr(default_config, field_name)
+
+        # Convert field_name to CLI argument (snake_case to kebab-case)
+        cli_arg = "--" + field_name.replace("_", "-")
+
+        # Set up argument based on type
+        if field_type is bool:
+            # For booleans, create both --flag and --no-flag options
+            if default_value:
+                parser.add_argument(f"--no-{field_name.replace('_', '-')}",
+                                  dest=field_name, action="store_false",
+                                  help=f"Disable {field_name} (default: {default_value})")
+            else:
+                parser.add_argument(cli_arg, dest=field_name, action="store_true",
+                                  help=f"Enable {field_name} (default: {default_value})")
+        else:
+            parser.add_argument(cli_arg, dest=field_name, type=field_type,
+                              help=f"{field_name} (default: {default_value})")
+
+    return parser
+
+
+def parse_config() -> Config:
+    """Parse command line arguments and return Config with overrides applied."""
+    parser = create_config_parser()
+    args = parser.parse_args()
+
+    # Start with default config
+    cfg = Config()
+
+    # Override with any provided command line arguments
+    for field in fields(Config):
+        field_name = field.name
+        if hasattr(args, field_name):
+            arg_value = getattr(args, field_name)
+            if arg_value is not None:
+                setattr(cfg, field_name, arg_value)
+
+    return cfg
 
 
 def setup_logging():
@@ -52,5 +117,8 @@ def setup_logging():
     root_logger.setLevel(getattr(logging, LOG_LEVEL))
     root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
+
+    # Reduce noise from external libraries
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     return root_logger
