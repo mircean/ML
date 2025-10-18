@@ -5,7 +5,7 @@ Development context for Claude Code when working with this LangGraph stock tradi
 ## Quick Commands
 ```bash
 uv sync              # Install deps
-python sync_data.py  # Download data (run first!)
+python stock_history_sync.py  # Download data (run first!)
 python agent.py      # Run agent
 ```
 
@@ -54,16 +54,16 @@ uv sync
 ### Core Operations
 ```bash
 # Download/update stock data (run this first)
-python sync_data.py
+python stock_history_sync.py
 
 # Run the trading agent
 python agent.py
 
 ### Database Operations
-The `sync_data.py` script completely refreshes the database on each run using:
-- `NasdaqStockFetcher`: Downloads NASDAQ 100 stock list
+The `stock_history_sync.py` script completely refreshes the database on each run using:
+- `NasdaqStockFetcher` (embedded): Downloads NASDAQ 100 stock list
 - `StockFetcher`: Downloads comprehensive stock data via yfinance
-- `StockDatabase`: Manages SQLite database operations and schema
+- `StockHistoryDatabase`: Manages SQLite database operations and schema
 
 ## Important Implementation Details
 
@@ -81,10 +81,15 @@ The `TradingState` class tracks:
 - Analysis and trading completion flags
 
 ### Tool Integration
-Three main tools are available to the LLM:
+Eight main tools are available to the LLM:
 - `run_sql`: Executes SQL queries against the stock database with comprehensive error handling
 - `search_market_news`: Uses Tavily API for web search
-- `retrieve_last_N_days_of_analysis`: Queries historical scores for specific stocks to identify trends
+- `analyze_stock_trends`: Analyzes score trends, volatility, and sustained patterns for specific stocks
+- `compare_portfolio_performance`: Compares performance metrics across current portfolio stocks
+- `find_replacement_opportunities`: Finds holdings with clearly better alternatives available
+- `find_stocks_to_sell`: Identifies holdings that should be sold due to poor fundamental performance
+- `find_stocks_to_buy`: Finds best available stocks when cash is available
+- `get_confidence_metrics`: Assesses trading decision confidence based on historical patterns
 
 ### Portfolio Management
 - Portfolio data is stored in `portfolio.json`
@@ -106,12 +111,12 @@ The system uses structured prompts with:
 - `prompts.py`: System prompts and database schema documentation
 
 **Data Management:**
-- `database.py`: StockDatabase and MemoryDatabase classes for SQLite operations
-- `sync_data.py`: Data downloading and portfolio value updates
-- `schema.sql`: Database table definitions and indexes
-- `schema_memory.sql`: Memory database schema for historical scores
+- `stock_history_database.py`: StockHistoryDatabase class for SQLite operations
+- `memory_database.py`: MemoryDatabase class with enhanced analytics for trading confidence
+- `stock_history_sync.py`: Data downloading and portfolio value updates
+- `stock_history_schema.sql`: Database table definitions and indexes
+- `memory_schema.sql`: Memory database schema for historical scores
 - `stock_fetcher.py`: yfinance integration for stock data
-- `nasdaq_fetcher.py`: NASDAQ 100 stock list fetching
 
 **Data Files:**
 - `nasdaq_stocks.db`: SQLite database (generated)
@@ -131,7 +136,7 @@ The system uses structured prompts with:
 ## Development Notes
 
 When working with this codebase:
-- Always run `sync_data.py` before `agent.py` to ensure fresh data
+- Always run `stock_history_sync.py` before `agent.py` to ensure fresh data
 - The database is completely rebuilt on each sync to ensure data consistency
 - Portfolio positions are updated with current market prices during sync
 - The agent's analysis is structured around iterative tool use with reflection

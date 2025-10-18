@@ -1,8 +1,8 @@
 import logging
 import os
 import sqlite3
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List
 
 import config
 import pandas as pd
@@ -12,7 +12,7 @@ config.setup_logging()
 logger = logging.getLogger(__name__)
 
 
-class StockDatabase:
+class StockHistoryDatabase:
     """Database manager for stock data storage and retrieval"""
 
     def __init__(self):
@@ -21,7 +21,7 @@ class StockDatabase:
 
     def init_database(self):
         """Initialize database with required tables from schema file"""
-        schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
+        schema_path = os.path.join(os.path.dirname(__file__), "stock_history_schema.sql")
 
         with open(schema_path, "r") as f:
             schema_sql = f.read()
@@ -30,7 +30,7 @@ class StockDatabase:
             cursor = conn.cursor()
             cursor.executescript(schema_sql)
             conn.commit()
-            # logger.info("Database initialized successfully from schema.sql")
+            # logger.info("Database initialized successfully from stock_history_schema.sql")
 
     def insert_stock(self, symbol: str, name: str, sector: str = None, industry: str = None):
         """Insert or update stock metadata"""
@@ -294,129 +294,10 @@ class StockDatabase:
             return stats
 
 
-class MemoryDatabase:
-    """Database manager for agent memory storage and retrieval"""
-
-    def __init__(self):
-        self.db_path = config.MEMORY_DATABASE_PATH
-        self.init_database()
-
-    def init_database(self):
-        """Initialize memory database with required tables from schema file"""
-        schema_path = os.path.join(os.path.dirname(__file__), "schema_memory.sql")
-
-        with open(schema_path, "r") as f:
-            schema_sql = f.read()
-
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.executescript(schema_sql)
-            conn.commit()
-            # logger.info("Memory database initialized successfully from memory_schema.sql")
-
-    def update_memory(self, date: str, holdings_scores: List, alternatives_scores: List):
-        """Save stock scores for holdings and alternatives"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-
-            # Save holdings scores
-            for score in holdings_scores:
-                cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO agent_scores
-                    (date, symbol, composite_score, momentum_score, quality_score,
-                     technical_score, current_price, is_holding)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        date,
-                        score.symbol,
-                        score.composite_score,
-                        score.momentum_score,
-                        score.quality_score,
-                        score.technical_score,
-                        score.current_price,
-                        True,  # is_holding
-                    ),
-                )
-
-            # Save alternatives scores
-            for score in alternatives_scores:
-                cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO agent_scores
-                    (date, symbol, composite_score, momentum_score, quality_score,
-                     technical_score, current_price, is_holding)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        date,
-                        score.symbol,
-                        score.composite_score,
-                        score.momentum_score,
-                        score.quality_score,
-                        score.technical_score,
-                        score.current_price,
-                        False,  # is_holding
-                    ),
-                )
-
-            conn.commit()
-            logger.info(f"Updated memory with {len(holdings_scores)} holdings and {len(alternatives_scores)} alternatives scores for {date}")
-
-    def get_last_n_days(self, days: int = 7, symbol: str = None) -> List[Dict]:
-        """Retrieve scores from the last N days, optionally filtered by symbol"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-
-            if symbol:
-                cursor.execute(
-                    """
-                    SELECT date, symbol, composite_score, momentum_score, quality_score,
-                           technical_score, current_price, is_holding
-                    FROM agent_scores
-                    WHERE date >= ? AND symbol = ?
-                    ORDER BY date DESC, composite_score DESC
-                """,
-                    (cutoff_date, symbol.upper()),
-                )
-            else:
-                cursor.execute(
-                    """
-                    SELECT date, symbol, composite_score, momentum_score, quality_score,
-                           technical_score, current_price, is_holding
-                    FROM agent_scores
-                    WHERE date >= ?
-                    ORDER BY date DESC, composite_score DESC
-                """,
-                    (cutoff_date,),
-                )
-
-            results = cursor.fetchall()
-
-            data = []
-            for row in results:
-                data.append(
-                    {
-                        "date": row[0],
-                        "symbol": row[1],
-                        "composite_score": row[2],
-                        "momentum_score": row[3],
-                        "quality_score": row[4],
-                        "technical_score": row[5],
-                        "current_price": row[6],
-                        "is_holding": bool(row[7]),
-                    }
-                )
-
-            return data
+# MemoryDatabase moved to memory_database.py
 
 
 if __name__ == "__main__":
-    db = StockDatabase()
+    db = StockHistoryDatabase()
     print("Database initialized")
     print("Stats:", db.get_database_stats())
-
-    memory_db = MemoryDatabase()
-    print("Memory database initialized")

@@ -6,12 +6,65 @@ from pathlib import Path
 
 import agent
 import config
-import sync_data
+import markdown
+import stock_history_sync
 from dotenv import load_dotenv
 from outlook_auth import OutlookAuthenticator
 from outlook_client import OutlookClient
 
 logger = logging.getLogger(__name__)
+
+
+def generate_trading_email(trading_analysis, portfolio, final_portfolio):
+    """
+    Generate a formatted markdown email body for trading analysis.
+
+    Args:
+        trading_analysis: TradingAnalysis object with recommendations and scores
+        portfolio: Portfolio dictionary with cash and positions
+
+    Returns:
+        str: Formatted markdown email body
+    """
+    # Create formatted markdown email body using existing print functions with markdown enabled
+    body = agent.print_portfolio(portfolio, "Current Portfolio", use_markdown=True)
+    body += "\n\n"
+    body += agent.print_analysis(trading_analysis, use_markdown=True)
+
+    body += "\n\n"
+    if final_portfolio:
+        body += agent.print_portfolio(final_portfolio, "Final Portfolio", use_markdown=True)
+    else:
+        body += "No trades were executed."
+
+    return body
+
+
+def send_email(subject, body):
+    """
+    Send an email with the given subject and body.
+
+    Args:
+        subject: Email subject line
+        body: Email body content (markdown format)
+    """
+    # Check required environment variables for email
+    tenant_id = os.getenv("GRAPH_TENANT_ID")
+    client_id = os.getenv("GRAPH_CLIENT_ID")
+    assert tenant_id and client_id, "Missing required environment variables: GRAPH_TENANT_ID, GRAPH_CLIENT_ID"
+
+    # Convert markdown to HTML
+    html_body = markdown.markdown(body, extensions=["tables"])
+
+    authenticator = OutlookAuthenticator(tenant_id=tenant_id, client_id=client_id, scopes=config.SCOPES)
+    client = OutlookClient(authenticator)
+
+    client.send_email(
+        to="mircean@outlook.com",
+        subject=subject,
+        body=html_body,
+        body_type="HTML",
+    )
 
 
 def main():
@@ -20,11 +73,6 @@ def main():
 
     # Parse configuration with command line overrides
     cfg = config.parse_config()
-
-    # Check required environment variables for email
-    tenant_id = os.getenv("GRAPH_TENANT_ID")
-    client_id = os.getenv("GRAPH_CLIENT_ID")
-    assert tenant_id and client_id, "Missing required environment variables: GRAPH_TENANT_ID, GRAPH_CLIENT_ID"
 
     config.setup_logging()
 
@@ -41,7 +89,7 @@ def main():
         logger.info("Skipping data synchronization (--skip-data-download flag set)")
     else:
         logger.info("Running data synchronization...")
-        sync_data.main()
+        stock_history_sync.main()
         logger.info("Data sync completed successfully")
 
     # Load portfolio data
@@ -56,24 +104,13 @@ def main():
 
     # notifier = EmailNotifier()
 
-    subject = f"🔔 Daily Trading Report - {datetime.now().strftime('%Y-%m-%d')}"
-    body = agent.print_analysis(trading_analysis)
-    body += "\n\n"
-    body += agent.print_portfolio(portfolio, "Initial Portfolio")
-    if final_portfolio:
-        body += "\n\n"
-        body += agent.print_portfolio(final_portfolio, "Final Portfolio")
+    subject = f"Daily Trading Report - {datetime.now().strftime('%Y-%m-%d')}"
 
-    authenticator = OutlookAuthenticator(tenant_id=tenant_id, client_id=client_id, scopes=config.SCOPES)
+    # Generate formatted email body
+    body = generate_trading_email(trading_analysis, portfolio, final_portfolio)
 
-    client = OutlookClient(authenticator)
-
-    client.send_email(
-        to="mircean@outlook.com",
-        subject=subject,
-        body=body,
-        body_type="Text",  # or "HTML"
-    )
+    # Send email
+    send_email(subject, body)
 
     logger.info("Daily trading report sent to email")
 

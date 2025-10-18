@@ -225,9 +225,51 @@ TOP ALTERNATIVES:
 Please use the available tools:
 1. Use `run_sql` to execute SQL queries against this database to answer user questions about stocks, financial metrics, price movements, and market analysis.
 2. Use `search_market_news` to get recent market trends and news
-3. Use `retrieve_last_N_days_of_analysis` to check a history of the analysis for specific stocks to identify trends and patterns (e.g., "Has NVDA been consistently strong over the last 5 days?")
+3. Use `analyze_stock_trends` to analyze score trends, volatility, and sustained patterns for specific stocks
+4. Use `compare_portfolio_performance` to compare performance metrics across current portfolio stocks
+5. Use `find_replacement_opportunities` to find holdings with clearly better alternatives available
+6. Use `find_stocks_to_sell` to get raw performance metrics for all current holdings for sell evaluation
+7. Use `find_stocks_to_buy` to get raw performance metrics for top non-holding stocks for buy evaluation
+8. Use `get_confidence_metrics` to assess trading decision confidence based on historical patterns
 
-Consider checking recent news and trends in previous analysis before making decisions, do not rely solely on the database queries
+**TRADING STRATEGY**: Use the memory analysis tools in this strategic order:
+1. **Evaluate sell candidates** (use `find_stocks_to_sell`) - Analyze raw metrics to identify poor performers for removal
+2. **Find strategic replacements** (use `find_replacement_opportunities`) - Identify holdings with clearly better alternatives
+3. **Evaluate buy opportunities** (use `find_stocks_to_buy`) - Analyze raw metrics to find highest-quality investment opportunities
+
+**PARAMETER GUIDANCE**:
+- **days**: Use 7-14 days for recent trends, 21+ days for longer patterns
+- **min_gap** in `find_replacement_opportunities`: Use 3-5 for aggressive, 5-8 for balanced, 8+ for conservative
+- **min_score_threshold** in `find_stocks_to_sell`: Use 50-60 for strict, 60-70 for balanced
+- **min_score_threshold** in `find_stocks_to_buy`: Use 75-80 for quality, 80+ for premium opportunities
+- **top_n** in `find_stocks_to_buy`: Use 5-10 to focus on best opportunities, avoid overwhelming choices
+
+**INTERPRETING MEMORY TOOL METRICS**:
+The memory analysis tools return raw numerical data for you to interpret naturally:
+
+- **trend_slope**: Rate of score change over time
+  - Positive values (>0.5): Rising performance trend
+  - Negative values (<-0.5): Declining performance trend
+  - Values near 0: Stable/flat trend
+
+- **score_volatility**: Standard deviation of scores (stability measure)
+  - Low values (<5): Consistent, stable performance
+  - Medium values (5-10): Moderate fluctuation
+  - High values (>10): Highly volatile, unpredictable performance
+
+- **trend_strength**: Consistency of trend direction (0-1 scale)
+  - Values >0.7: Strong, consistent directional trend
+  - Values 0.3-0.7: Moderate trend consistency
+  - Values <0.3: Weak or inconsistent trend
+
+- **performance_gap**: Score difference vs alternatives/holdings
+  - Large positive gaps (>10): Significantly outperforming
+  - Small gaps (-5 to +5): Roughly comparable performance
+  - Large negative gaps (<-10): Significantly underperforming
+
+Use these raw metrics to make nuanced trading decisions rather than relying on pre-categorized ratings.
+
+Consider sustained trends, portfolio-wide performance patterns, and overall confidence metrics before making trading decisions. Do not rely solely on database queries or single-day metrics.
 
 IMPORTANT: Before each tool use, explain what information you need and why you're choosing that specific tool and query. Think strategically about what data will help you make better trading decisions.
 
@@ -270,7 +312,7 @@ Analysis Context from your research:
 Please provide:
 
 1. **Summary**: A concise overview of your market analysis and key findings
-2. **Trade Recommendations**: Specific actionable trades with:
+2. **Trade Recommendations**: Specific actionable trades for each stock with the following format:
    - Action: BUY, SELL, or HOLD
    - Symbol: Stock ticker (if applicable)
    - Shares: Number of shares to trade

@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 
 import config
 import prompts
-from database import MemoryDatabase
+from memory_database import MemoryDatabase
 
 # Load environment variables
 from dotenv import load_dotenv
