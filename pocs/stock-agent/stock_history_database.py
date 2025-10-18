@@ -1,19 +1,18 @@
 import logging
 import os
 import sqlite3
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
-
-import pandas as pd
+from datetime import datetime
+from typing import Dict, List
 
 import config
+import pandas as pd
 
 # Setup logging
 config.setup_logging()
 logger = logging.getLogger(__name__)
 
 
-class StockDatabase:
+class StockHistoryDatabase:
     """Database manager for stock data storage and retrieval"""
 
     def __init__(self):
@@ -22,7 +21,7 @@ class StockDatabase:
 
     def init_database(self):
         """Initialize database with required tables from schema file"""
-        schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
+        schema_path = os.path.join(os.path.dirname(__file__), "stock_history_schema.sql")
 
         with open(schema_path, "r") as f:
             schema_sql = f.read()
@@ -31,11 +30,9 @@ class StockDatabase:
             cursor = conn.cursor()
             cursor.executescript(schema_sql)
             conn.commit()
-            logger.info("Database initialized successfully from schema.sql")
+            # logger.info("Database initialized successfully from stock_history_schema.sql")
 
-    def insert_stock(
-        self, symbol: str, name: str, sector: str = None, industry: str = None
-    ):
+    def insert_stock(self, symbol: str, name: str, sector: str = None, industry: str = None):
         """Insert or update stock metadata"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
@@ -62,22 +59,12 @@ class StockDatabase:
                     (
                         symbol,
                         date.strftime("%Y-%m-%d"),
-                        float(row.get("Open", 0))
-                        if pd.notna(row.get("Open"))
-                        else None,
-                        float(row.get("High", 0))
-                        if pd.notna(row.get("High"))
-                        else None,
+                        float(row.get("Open", 0)) if pd.notna(row.get("Open")) else None,
+                        float(row.get("High", 0)) if pd.notna(row.get("High")) else None,
                         float(row.get("Low", 0)) if pd.notna(row.get("Low")) else None,
-                        float(row.get("Close", 0))
-                        if pd.notna(row.get("Close"))
-                        else None,
-                        float(row.get("Adj Close", 0))
-                        if pd.notna(row.get("Adj Close"))
-                        else None,
-                        int(row.get("Volume", 0))
-                        if pd.notna(row.get("Volume"))
-                        else None,
+                        float(row.get("Close", 0)) if pd.notna(row.get("Close")) else None,
+                        float(row.get("Adj Close", 0)) if pd.notna(row.get("Adj Close")) else None,
+                        int(row.get("Volume", 0)) if pd.notna(row.get("Volume")) else None,
                     ),
                 )
             conn.commit()
@@ -202,9 +189,7 @@ class StockDatabase:
             cursor.execute("SELECT symbol FROM stocks")
             return [row[0] for row in cursor.fetchall()]
 
-    def get_stock_data(
-        self, symbol: str, start_date: str = None, end_date: str = None
-    ) -> Dict:
+    def get_stock_data(self, symbol: str, start_date: str = None, end_date: str = None) -> Dict:
         """Retrieve comprehensive stock data"""
         with sqlite3.connect(self.db_path) as conn:
             # Base query conditions
@@ -304,14 +289,15 @@ class StockDatabase:
             stats["date_range"] = {"start": date_range[0], "end": date_range[1]}
 
             # Database size
-            stats["db_size_mb"] = round(
-                os.path.getsize(self.db_path) / (1024 * 1024), 2
-            )
+            stats["db_size_mb"] = round(os.path.getsize(self.db_path) / (1024 * 1024), 2)
 
             return stats
 
 
+# MemoryDatabase moved to memory_database.py
+
+
 if __name__ == "__main__":
-    db = StockDatabase()
+    db = StockHistoryDatabase()
     print("Database initialized")
     print("Stats:", db.get_database_stats())

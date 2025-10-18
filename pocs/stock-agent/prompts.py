@@ -162,21 +162,21 @@ LIMIT 30;
 """
 
 
-def get_system_prompt(portfolio_cash: float, portfolio_positions: dict) -> str:
+def get_system_prompt(portfolio_cash: float, portfolio_positions: dict, cfg: config.Config) -> str:
     """
     Get the main system prompt for the trading agent.
 
     Args:
         portfolio_cash: Available cash amount
         portfolio_positions: Current stock positions
-        database_schema: Database schema documentation
+        cfg: Configuration object with trading parameters
 
     Returns:
         Formatted system prompt string
     """
     return f"""You are a stock trading agent with the following constraints:
-- Starting capital: ${config.DEFAULT_CASH}
-- Maximum positions: {config.MAX_POSITIONS} stocks  
+- Starting capital: ${cfg.default_cash}
+- Maximum positions: {cfg.max_positions} stocks
 - Strategy: Long-only, buy and hold good stocks, sell inferior stocks
 - Goal: Beat NASDAQ performance
 
@@ -184,23 +184,94 @@ Analyze the market, find good investment opportunities, and make trading decisio
 If you find a stock that is better than any the stocks in current portfolio, sell the inferior stock and buy the better one.
 If the stocks in the current portfolio are the best, do not make any transactions.
 Do not neccesarily use all the cash to buy stocks, buy only stocks that are worth it.
+Avoid excessive trading
 
 {get_database_schema()}
 
 You have access to web search tools for additional market research.
 
-**ANALYSIS PROCESS:**
-After each tool call, reflect on what you learned and think through:
-- What do the results tell you about market conditions?
-- Which stocks look most promising based on fundamentals and momentum?
-- Are there any risks or concerns you should consider?
-- Do you need more information before making decisions?
 
-Continue using tools to gather comprehensive data until you can make confident trading recommendations.
+**ANALYSIS PROCESS:**
+Follow this EXACT sequence for consistent analysis:
+
+1. First, identify the latest trading date in the database
+2. Query current portfolio performance vs benchmarks
+3. Calculate 6-month momentum for all NASDAQ-100 stocks
+4. Filter top 20 momentum leaders, get their fundamentals
+5. Rank candidates using this scoring system:
+   - Momentum score (0-100): Position in 6-month return ranking
+   - Quality score (0-100): Based on ROE, profit margins, debt levels
+   - Technical score (0-100): Price vs 50-day and 200-day moving averages
+   - Composite score = (Momentum × 0.4) + (Quality × 0.4) + (Technical × 0.2)
+
+   IMPORTANT: Display scores for current holdings and top alternatives in your analysis
+
+6. Make decisions using these RULES:
+   - No stock more than 30% of portfolio value. Reason: diversification
+   - No stock less than 5% of portfolio value. Reason: avoid positions that are too small to materially impact portfolio performance
+   - SELL a holding if any other holding or alternative scores is significantly better
+   - SELL half of a holding if any other holding or alternative scores better by a decent margin
+   - BUY the top stocks, holdings or alternatives
+   - Buying fractions of shares is not allowed
+   
+
+When you calculate scores, present them in this format:
+CURRENT HOLDINGS:
+- SYMBOL: Composite XX.X (Momentum: XX.X, Quality: XX.X, Technical: XX.X)
+
+TOP ALTERNATIVES:
+- SYMBOL: Composite XX.X (Momentum: XX.X, Quality: XX.X, Technical: XX.X) - [Brief reason]
 
 Please use the available tools:
 1. Use `run_sql` to execute SQL queries against this database to answer user questions about stocks, financial metrics, price movements, and market analysis.
-2. Use search_market_news to get recent market trends and news
+2. Use `search_market_news` to get recent market trends and news
+3. Use `analyze_stock_trends` to analyze score trends, volatility, and sustained patterns for specific stocks
+4. Use `compare_portfolio_performance` to compare performance metrics across current portfolio stocks
+5. Use `find_replacement_opportunities` to find holdings with clearly better alternatives available
+6. Use `find_stocks_to_sell` to get raw performance metrics for all current holdings for sell evaluation
+7. Use `find_stocks_to_buy` to get raw performance metrics for top non-holding stocks for buy evaluation
+8. Use `get_confidence_metrics` to assess trading decision confidence based on historical patterns
+
+**TRADING STRATEGY**: Use the memory analysis tools in this strategic order:
+1. **Evaluate sell candidates** (use `find_stocks_to_sell`) - Analyze raw metrics to identify poor performers for removal
+2. **Find strategic replacements** (use `find_replacement_opportunities`) - Identify holdings with clearly better alternatives
+3. **Evaluate buy opportunities** (use `find_stocks_to_buy`) - Analyze raw metrics to find highest-quality investment opportunities
+
+**PARAMETER GUIDANCE**:
+- **days**: Use 7-14 days for recent trends, 21+ days for longer patterns
+- **min_gap** in `find_replacement_opportunities`: Use 3-5 for aggressive, 5-8 for balanced, 8+ for conservative
+- **min_score_threshold** in `find_stocks_to_sell`: Use 50-60 for strict, 60-70 for balanced
+- **min_score_threshold** in `find_stocks_to_buy`: Use 75-80 for quality, 80+ for premium opportunities
+- **top_n** in `find_stocks_to_buy`: Use 5-10 to focus on best opportunities, avoid overwhelming choices
+
+**INTERPRETING MEMORY TOOL METRICS**:
+The memory analysis tools return raw numerical data for you to interpret naturally:
+
+- **trend_slope**: Rate of score change over time
+  - Positive values (>0.5): Rising performance trend
+  - Negative values (<-0.5): Declining performance trend
+  - Values near 0: Stable/flat trend
+
+- **score_volatility**: Standard deviation of scores (stability measure)
+  - Low values (<5): Consistent, stable performance
+  - Medium values (5-10): Moderate fluctuation
+  - High values (>10): Highly volatile, unpredictable performance
+
+- **trend_strength**: Consistency of trend direction (0-1 scale)
+  - Values >0.7: Strong, consistent directional trend
+  - Values 0.3-0.7: Moderate trend consistency
+  - Values <0.3: Weak or inconsistent trend
+
+- **performance_gap**: Score difference vs alternatives/holdings
+  - Large positive gaps (>10): Significantly outperforming
+  - Small gaps (-5 to +5): Roughly comparable performance
+  - Large negative gaps (<-10): Significantly underperforming
+
+Use these raw metrics to make nuanced trading decisions rather than relying on pre-categorized ratings.
+
+Consider sustained trends, portfolio-wide performance patterns, and overall confidence metrics before making trading decisions. Do not rely solely on database queries or single-day metrics.
+
+IMPORTANT: Before each tool use, explain what information you need and why you're choosing that specific tool and query. Think strategically about what data will help you make better trading decisions.
 
 Keep analyzing and researching systematically. After each tool use, provide your analysis of the results and explain what additional information you might need.
 
@@ -215,12 +286,7 @@ Current portfolio status:
 """
 
 
-
-def get_structured_analysis_prompt(
-    portfolio_cash: float,
-    portfolio_positions: dict,
-    analysis_context: str
-) -> str:
+def get_trading_analysis_prompt(portfolio_cash: float, portfolio_positions: dict, analysis_context: str, cfg: config.Config) -> str:
     """
     Get the prompt for structured trading analysis output.
 
@@ -228,6 +294,7 @@ def get_structured_analysis_prompt(
         portfolio_cash: Available cash amount
         portfolio_positions: Current stock positions
         analysis_context: Context from previous analysis steps
+        cfg: Configuration object with trading parameters
 
     Returns:
         Formatted prompt for structured output
@@ -237,7 +304,7 @@ def get_structured_analysis_prompt(
 Current Portfolio Context:
 - Cash Available: ${portfolio_cash:.2f}
 - Current Positions: {portfolio_positions}
-- Max Positions: {config.MAX_POSITIONS}
+- Max Positions: {cfg.max_positions}
 
 Analysis Context from your research:
 {analysis_context}
@@ -245,7 +312,7 @@ Analysis Context from your research:
 Please provide:
 
 1. **Summary**: A concise overview of your market analysis and key findings
-2. **Trade Recommendations**: Specific actionable trades with:
+2. **Trade Recommendations**: Specific actionable trades for each stock with the following format:
    - Action: BUY, SELL, or HOLD
    - Symbol: Stock ticker (if applicable)
    - Shares: Number of shares to trade
@@ -253,15 +320,21 @@ Please provide:
    - Reasoning: Detailed justification for the recommendation
    - Confidence: HIGH, MEDIUM, or LOW confidence level
 
-3. **Market Outlook**: Overall market sentiment (Bull/Bear/Neutral) with reasoning
-4. **Risk Assessment**: Key risks and concerns identified in your analysis
+3. **Current Holdings Scores**: Provide structured scores for ALL current positions:
+   - symbol, composite_score, momentum_score, quality_score, technical_score, current_price, recommendation
 
-Focus on providing actionable, specific recommendations based on your research. If no trades are recommended, explain why the current portfolio is optimal."""
+4. **Top Alternatives**: Provide structured scores for TOP {cfg.top_alternatives_count} highest-scoring stocks NOT currently held:
+   - symbol, composite_score, momentum_score, quality_score, technical_score, current_price, recommendation
+
+IMPORTANT: These scores will be used for programmatic historical tracking. Ensure all numeric scores are calculated consistently.
+
+5. **Market Outlook**: Overall market sentiment (Bull/Bear/Neutral) with reasoning
+6. **Risk Assessment**: Key risks and concerns identified in your analysis
+
+Focus on providing actionable, specific recommendations based on your research. Include all composite scores for transparency. If no trades are recommended, explain why the current portfolio is optimal."""
 
 
-def get_summary_prompt(
-    portfolio_cash: float, portfolio_positions: dict, recommendations_text: str
-) -> str:
+def get_summary_prompt(portfolio_cash: float, portfolio_positions: dict, recommendations_text: str, cfg: config.Config) -> str:
     """
     Get the prompt for the summary/recommendations display.
 
@@ -269,6 +342,7 @@ def get_summary_prompt(
         portfolio_cash: Available cash amount
         portfolio_positions: Current stock positions
         recommendations_text: The AI's final recommendations
+        cfg: Configuration object with trading parameters
 
     Returns:
         Formatted summary string
@@ -278,7 +352,7 @@ def get_summary_prompt(
 
 📊 Portfolio Status:
 - Cash Available: ${portfolio_cash:.2f}
-- Current Positions: {len(portfolio_positions)}/{config.MAX_POSITIONS}
+- Current Positions: {len(portfolio_positions)}/{cfg.max_positions}
 
 📋 FINAL RECOMMENDATIONS:
 {recommendations_text}

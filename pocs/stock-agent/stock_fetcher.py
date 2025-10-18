@@ -9,7 +9,7 @@ import yfinance as yf
 from tqdm import tqdm
 
 import config
-from database import StockDatabase
+from stock_history_database import StockHistoryDatabase
 
 # Setup logging
 config.setup_logging()
@@ -264,7 +264,7 @@ class StockFetcher:
 
 if __name__ == "__main__":
     # Example usage
-    db = StockDatabase()
+    db = StockHistoryDatabase()
     fetcher = StockFetcher(db)
 
     # Fetch data for a few major stocks as test

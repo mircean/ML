@@ -6,7 +6,8 @@ from pathlib import Path
 
 import agent
 import config
-import sync_data
+import markdown
+import stock_history_sync
 from dotenv import load_dotenv
 from outlook_auth import OutlookAuthenticator
 from outlook_client import OutlookClient
@@ -14,14 +15,64 @@ from outlook_client import OutlookClient
 logger = logging.getLogger(__name__)
 
 
-def main():
-    """Main automation function."""
-    load_dotenv()
+def generate_trading_email(trading_analysis, portfolio, final_portfolio):
+    """
+    Generate a formatted markdown email body for trading analysis.
 
+    Args:
+        trading_analysis: TradingAnalysis object with recommendations and scores
+        portfolio: Portfolio dictionary with cash and positions
+
+    Returns:
+        str: Formatted markdown email body
+    """
+    # Create formatted markdown email body using existing print functions with markdown enabled
+    body = agent.print_portfolio(portfolio, "Current Portfolio", use_markdown=True)
+    body += "\n\n"
+    body += agent.print_analysis(trading_analysis, use_markdown=True)
+
+    body += "\n\n"
+    if final_portfolio:
+        body += agent.print_portfolio(final_portfolio, "Final Portfolio", use_markdown=True)
+    else:
+        body += "No trades were executed."
+
+    return body
+
+
+def send_email(subject, body):
+    """
+    Send an email with the given subject and body.
+
+    Args:
+        subject: Email subject line
+        body: Email body content (markdown format)
+    """
     # Check required environment variables for email
     tenant_id = os.getenv("GRAPH_TENANT_ID")
     client_id = os.getenv("GRAPH_CLIENT_ID")
     assert tenant_id and client_id, "Missing required environment variables: GRAPH_TENANT_ID, GRAPH_CLIENT_ID"
+
+    # Convert markdown to HTML
+    html_body = markdown.markdown(body, extensions=["tables"])
+
+    authenticator = OutlookAuthenticator(tenant_id=tenant_id, client_id=client_id, scopes=config.SCOPES)
+    client = OutlookClient(authenticator)
+
+    client.send_email(
+        to="mircean@outlook.com",
+        subject=subject,
+        body=html_body,
+        body_type="HTML",
+    )
+
+
+def main():
+    """Main automation function."""
+    load_dotenv()
+
+    # Parse configuration with command line overrides
+    cfg = config.parse_config()
 
     config.setup_logging()
 
@@ -33,54 +84,33 @@ def main():
         logger.info(f"Skipping - Weekend (day {day_of_week})")
         return
 
-    # Step 1: Sync data
-    logger.info("Running data synchronization...")
-    sync_data.main()
-    portfolio_path = Path("portfolio.json")
+    # Step 1: Sync data (optional)
+    if cfg.skip_data_download:
+        logger.info("Skipping data synchronization (--skip-data-download flag set)")
+    else:
+        logger.info("Running data synchronization...")
+        stock_history_sync.main()
+        logger.info("Data sync completed successfully")
+
+    # Load portfolio data
+    portfolio_path = Path(config.PORTFOLIO_FILE)
     with open(portfolio_path, "r") as f:
         portfolio = json.load(f)
-    logger.info("Data sync completed successfully")
 
     # Step 2: Run trading agent
     logger.info("Running trading agent...")
-    trading_analysis = agent.main()
+    trading_analysis, final_portfolio = agent.main(cfg)
     logger.info("Trading agent completed successfully")
 
     # notifier = EmailNotifier()
 
-    subject = f"🔔 Daily Trading Report - {datetime.now().strftime('%Y-%m-%d')}"
-    body = f"""
-Portfolio Value: ${portfolio.get("total_value", 0):.2f}
+    subject = f"Daily Trading Report - {datetime.now().strftime('%Y-%m-%d')}"
 
-Summary: {trading_analysis.summary}
+    # Generate formatted email body
+    body = generate_trading_email(trading_analysis, portfolio, final_portfolio)
 
-Market Outlook: {trading_analysis.market_outlook}
-
-Risk Assessment: {trading_analysis.risk_assessment}
-
-"""
-
-    for recommendation in trading_analysis.trade_recommendations:
-        body += f"""
-{recommendation.action} {recommendation.symbol} - {recommendation.shares} shares at {recommendation.price} - {recommendation.reasoning} - {recommendation.confidence}
-"""
-
-    # Temporary: Write to file
-    filename = subject.replace(":", "-").replace(" ", "_") + ".txt"
-    with open(filename, "w") as f:
-        f.write(f"Subject: {subject}\n\n{body}")
-    logger.info(f"Daily trading report written to {filename}")
-
-    authenticator = OutlookAuthenticator(tenant_id=tenant_id, client_id=client_id, scopes=config.SCOPES)
-
-    client = OutlookClient(authenticator)
-
-    client.send_email(
-        to="mircean@outlook.com",
-        subject=subject,
-        body=body,
-        body_type="Text",  # or "HTML"
-    )
+    # Send email
+    send_email(subject, body)
 
     logger.info("Daily trading report sent to email")
 
