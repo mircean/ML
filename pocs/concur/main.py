@@ -103,37 +103,27 @@ def main():
     # Check required environment variables
     client_id = os.getenv("CONCUR_CLIENT_ID")
     client_secret = os.getenv("CONCUR_CLIENT_SECRET")
-    base_url = os.getenv("CONCUR_BASE_URL")
+    base_url = os.getenv("CONCUR_BASE_URL", "https://us2.api.concursolutions.com")
+    scope = os.getenv(
+                "CONCUR_SCOPE",
+                "openid profile user.read identity.user.ids.read expense.report.read")
 
-    assert client_id and client_secret and base_url, (
-        "Missing required environment variables: CONCUR_CLIENT_ID, CONCUR_CLIENT_SECRET, CONCUR_BASE_URL"
-    )
-
-    # Check for authentication method
-    has_username_password = os.getenv("CONCUR_USERNAME") and os.getenv(
-        "CONCUR_PASSWORD"
-    )
-    has_company_token = os.getenv("CONCUR_COMPANY_UUID") and os.getenv(
-        "CONCUR_REQUEST_TOKEN"
-    )
-
-    assert has_username_password or has_company_token, (
-        "Missing authentication: Either (CONCUR_USERNAME + CONCUR_PASSWORD) or (CONCUR_COMPANY_UUID + CONCUR_REQUEST_TOKEN)"
-    )
+    if not client_id or not client_secret:
+        logger.error("CONCUR_CLIENT_ID and CONCUR_CLIENT_SECRET must be set in .env file")
+        sys.exit(1)
 
     config.setup_logging()
 
     logger.info("Starting Concur expense report receipt checker")
 
     try:
+        # Initialize authenticator with OAuth 2.0 PKCE flow
         authenticator = ConcurAuthenticator(
             client_id=client_id,
             client_secret=client_secret,
             base_url=base_url,
-            username=os.getenv("CONCUR_USERNAME"),
-            password=os.getenv("CONCUR_PASSWORD"),
-            company_uuid=os.getenv("CONCUR_COMPANY_UUID"),
-            request_token=os.getenv("CONCUR_REQUEST_TOKEN"),
+            redirect_uri=os.getenv("REDIRECT_URI", "http://localhost:53682/callback"),
+            scope=scope
         )
 
         client = ConcurClient(authenticator)
