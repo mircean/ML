@@ -10,6 +10,7 @@ dependencies = [
     "exchangelib>=5.4.3",
     "msal>=1.31.0",
     "azure-ai-formrecognizer>=3.3.3",
+    "tqdm>=4.67.1",
 ]
 
 [build-system]
