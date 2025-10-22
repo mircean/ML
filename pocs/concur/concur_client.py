@@ -67,11 +67,12 @@ class ConcurClient:
             List of expense dictionaries
         """
         endpoint = "/api/v3.0/expense/entries"
-        params = {"reportID": report_id}
+        params = {"reportID": report_id, "limit": 100}
 
         logger.info(f"Fetching expense details for report {report_id}")
         response_data = self._make_request("GET", endpoint, params)
 
         expenses = response_data.get("Items", [])
         logger.info(f"Found {len(expenses)} expenses in report {report_id}")
+        assert len(expenses) != 100, "More than 100 expenses found in report {report_id}, need to implement pagination"
         return expenses
