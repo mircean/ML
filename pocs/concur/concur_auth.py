@@ -299,7 +299,15 @@ class ConcurAuthenticator:
 
         # Exchange authorization code for tokens
         logger.info("Exchanging authorization code for tokens")
-        response_data = self._exchange_code_for_tokens(auth_code, code_verifier)
+        data = {
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "redirect_uri": self.redirect_uri,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "code_verifier": code_verifier,
+        }
+        response_data = self._token_request(data)
 
         # Process and save tokens
         return self._process_token_response(response_data)
@@ -330,31 +338,6 @@ class ConcurAuthenticator:
 
         return response.json()
 
-    def _exchange_code_for_tokens(self, code: str, code_verifier: str) -> Dict[str, Any]:
-        """
-        Exchange authorization code for access and refresh tokens.
-
-        Args:
-            code: Authorization code from OAuth callback
-            code_verifier: PKCE code verifier
-
-        Returns:
-            Token response data
-
-        Raises:
-            requests.HTTPError: If token exchange fails
-        """
-        logger.info(f"Exchanging authorization code at {self.token_url}")
-        data = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": self.redirect_uri,
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "code_verifier": code_verifier,
-        }
-        return self._token_request(data)
-
     def _refresh_access_token(self) -> str:
         """
         Refresh access token using refresh token.
@@ -363,6 +346,7 @@ class ConcurAuthenticator:
             New access token
 
         Raises:
+            ValueError: If no refresh token available
             requests.HTTPError: If token refresh fails
         """
         if not self.refresh_token:
@@ -375,7 +359,8 @@ class ConcurAuthenticator:
             "client_id": self.client_id,
             "client_secret": self.client_secret,
         }
-        return self._process_token_response(self._token_request(data))
+        response_data = self._token_request(data)
+        return self._process_token_response(response_data)
 
     def _process_token_response(self, response_data: Dict[str, Any]) -> str:
         """
