@@ -37,7 +37,7 @@ def test_read(client):
     """Test reading messages from inbox."""
     select_fields = ["subject", "from", "receivedDateTime", "isRead", "hasAttachments", "bodyPreview"]
 
-    message_limit = int(os.getenv("MESSAGE_LIMIT", str(config.MESSAGE_LIMIT)))
+    message_limit = config.MESSAGE_LIMIT
     messages = client.get_messages(limit=message_limit, select_fields=select_fields)
 
     if not messages:

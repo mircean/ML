@@ -13,7 +13,7 @@ import time
 import urllib.parse
 import webbrowser
 from datetime import datetime, timedelta
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Dict, Optional, Tuple
 
 import requests
@@ -177,10 +177,7 @@ class ConcurAuthenticator:
             Dictionary with Authorization and Accept headers
         """
         token = self.authenticate()
-        return {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json"
-        }
+        return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     def _generate_pkce_pair(self) -> Tuple[str, str]:
         """
@@ -190,14 +187,10 @@ class ConcurAuthenticator:
             Tuple of (code_verifier, code_challenge)
         """
         # Generate random code verifier (43-128 characters)
-        code_verifier = base64.urlsafe_b64encode(
-            secrets.token_bytes(32)
-        ).decode('utf-8').rstrip('=')
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
 
         # Generate code challenge (SHA256 hash of verifier)
-        code_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode('utf-8')).digest()
-        ).decode('utf-8').rstrip('=')
+        code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("utf-8")).digest()).decode("utf-8").rstrip("=")
 
         return code_verifier, code_challenge
 
@@ -223,9 +216,7 @@ class ConcurAuthenticator:
         }
         return f"{self.auth_url}?{urllib.parse.urlencode(params)}"
 
-    def _start_callback_server_and_get_code(
-        self, state: str, code_challenge: str, timeout: int = 300
-    ) -> str:
+    def _start_callback_server_and_get_code(self, state: str, code_challenge: str, timeout: int = 300) -> str:
         """
         Start local HTTP server, open browser, and wait for OAuth callback.
 
@@ -261,13 +252,13 @@ class ConcurAuthenticator:
             # Build and open authorization URL in browser
             auth_url = self._build_authorization_url(state, code_challenge)
             logger.info(f"Opening browser for authentication: {auth_url}")
-            print(f"\n{'='*70}")
-            print(f"AUTHENTICATION REQUIRED")
-            print(f"{'='*70}")
-            print(f"Opening your web browser for Concur authentication...")
-            print(f"\nIf the browser doesn't open automatically, visit:")
+            print(f"\n{'=' * 70}")
+            print("AUTHENTICATION REQUIRED")
+            print(f"{'=' * 70}")
+            print("Opening your web browser for Concur authentication...")
+            print("\nIf the browser doesn't open automatically, visit:")
             print(f"  {auth_url}")
-            print(f"{'='*70}\n")
+            print(f"{'=' * 70}\n")
 
             webbrowser.open(auth_url)
 
@@ -278,17 +269,12 @@ class ConcurAuthenticator:
                     return self._OAuthCallbackHandler.authorization_code
 
                 if self._OAuthCallbackHandler.error:
-                    raise RuntimeError(
-                        f"OAuth authentication failed: {self._OAuthCallbackHandler.error}"
-                    )
+                    raise RuntimeError(f"OAuth authentication failed: {self._OAuthCallbackHandler.error}")
 
                 time.sleep(1)
                 elapsed += 1
 
-            raise TimeoutError(
-                f"Authentication timed out after {timeout} seconds. "
-                f"Please try again."
-            )
+            raise TimeoutError(f"Authentication timed out after {timeout} seconds. Please try again.")
 
         finally:
             httpd.shutdown()
@@ -318,9 +304,33 @@ class ConcurAuthenticator:
         # Process and save tokens
         return self._process_token_response(response_data)
 
-    def _exchange_code_for_tokens(
-        self, code: str, code_verifier: str
-    ) -> Dict[str, Any]:
+    def _token_request(self, data: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Make a token request to the OAuth server.
+
+        Args:
+            data: Request data (grant type, credentials, etc.)
+
+        Returns:
+            Token response data
+
+        Raises:
+            requests.HTTPError: If token request fails
+        """
+        response = requests.post(
+            self.token_url,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=30,
+        )
+
+        if response.status_code != 200:
+            logger.error(f"Token request failed: {response.status_code} - {response.text}")
+            response.raise_for_status()
+
+        return response.json()
+
+    def _exchange_code_for_tokens(self, code: str, code_verifier: str) -> Dict[str, Any]:
         """
         Exchange authorization code for access and refresh tokens.
 
@@ -334,6 +344,7 @@ class ConcurAuthenticator:
         Raises:
             requests.HTTPError: If token exchange fails
         """
+        logger.info(f"Exchanging authorization code at {self.token_url}")
         data = {
             "grant_type": "authorization_code",
             "code": code,
@@ -342,22 +353,7 @@ class ConcurAuthenticator:
             "client_secret": self.client_secret,
             "code_verifier": code_verifier,
         }
-
-        logger.info(f"Exchanging authorization code at {self.token_url}")
-        response = requests.post(
-            self.token_url,
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=30,
-        )
-
-        if response.status_code != 200:
-            logger.error(
-                f"Token exchange failed: {response.status_code} - {response.text}"
-            )
-            response.raise_for_status()
-
-        return response.json()
+        return self._token_request(data)
 
     def _refresh_access_token(self) -> str:
         """
@@ -372,28 +368,14 @@ class ConcurAuthenticator:
         if not self.refresh_token:
             raise ValueError("No refresh token available")
 
+        logger.info("Refreshing access token")
         data = {
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token,
             "client_id": self.client_id,
             "client_secret": self.client_secret,
         }
-
-        logger.info("Refreshing access token")
-        response = requests.post(
-            self.token_url,
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=30,
-        )
-
-        if response.status_code != 200:
-            logger.error(
-                f"Token refresh failed: {response.status_code} - {response.text}"
-            )
-            response.raise_for_status()
-
-        return self._process_token_response(response.json())
+        return self._process_token_response(self._token_request(data))
 
     def _process_token_response(self, response_data: Dict[str, Any]) -> str:
         """
@@ -437,11 +419,7 @@ class ConcurAuthenticator:
         updates = {
             "CONCUR_ACCESS_TOKEN": self.access_token or "",
             "CONCUR_REFRESH_TOKEN": self.refresh_token or "",
-            "CONCUR_ACCESS_TOKEN_EXPIRES_AT": (
-                str(int(self.token_expires_at.timestamp()))
-                if self.token_expires_at
-                else "0"
-            ),
+            "CONCUR_ACCESS_TOKEN_EXPIRES_AT": (str(int(self.token_expires_at.timestamp())) if self.token_expires_at else "0"),
         }
 
         # Update .env file
@@ -568,7 +546,4 @@ class ConcurAuthenticator:
                 return self.user_id
 
         # If we still don't have a user ID, this is an error
-        raise RuntimeError(
-            "Could not extract user ID from access token. "
-            "The token may be invalid or in an unexpected format."
-        )
+        raise RuntimeError("Could not extract user ID from access token. The token may be invalid or in an unexpected format.")

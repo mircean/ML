@@ -5,7 +5,6 @@ Main application for finding Concur expense reports with missing receipts.
 import datetime
 import logging
 import os
-import sys
 
 import config
 import tqdm
