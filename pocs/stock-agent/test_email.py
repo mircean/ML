@@ -18,6 +18,7 @@ class TestEmailGeneration(unittest.TestCase):
     def setUp(self):
         """Set up test data"""
         self.trading_analysis = TradingAnalysis(
+            complete_analysis="This is a test trading analysis with detailed market insights and recommendations.",
             summary="Test email with sample market analysis showing strong tech sector performance.",
             trade_recommendations=[
                 TradeRecommendation(
@@ -50,7 +51,7 @@ class TestEmailGeneration(unittest.TestCase):
 
     def test_email_generation_works(self):
         """Test that email generation doesn't crash and produces output"""
-        body = generate_trading_email(self.trading_analysis, self.portfolio)
+        body = generate_trading_email(self.trading_analysis, self.portfolio, None)
 
         # Basic checks
         self.assertIsInstance(body, str)
@@ -67,7 +68,7 @@ class TestEmailGeneration(unittest.TestCase):
         """Send a test trading email"""
         # Generate email
         subject = f"TEST Trading Report - {datetime.now().strftime('%Y-%m-%d')}"
-        body = generate_trading_email(self.trading_analysis, self.portfolio)
+        body = generate_trading_email(self.trading_analysis, self.portfolio, None)
 
         # Send email using the shared method
         send_email(subject, body)

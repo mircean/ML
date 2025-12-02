@@ -5,8 +5,7 @@
 __pycache__/
 
 # Generated data files
-nasdaq_stocks.db
-agent_memory.db
+*.db
 portfolio.json
 log.txt
 

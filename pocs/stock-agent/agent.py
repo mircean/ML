@@ -34,6 +34,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from memory_database import MemoryDatabase
+from portfolio_database import PortfolioDatabase
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -41,11 +42,29 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Lot:
-    """A lot represents a specific purchase of shares"""
+    """
+    A lot represents a specific purchase of shares.
+
+    For active lots (in positions):
+        - date: purchase date
+        - shares: number of shares
+        - price_per_share: purchase price per share
+        - sale_date: None
+        - sale_price: None
+
+    For closed lots (in closed_lots):
+        - date: purchase date
+        - shares: number of shares sold
+        - price_per_share: purchase price per share
+        - sale_date: date of sale
+        - sale_price: sale price per share
+    """
 
     date: str  # Purchase date in YYYY-MM-DD format
     shares: int  # Number of shares in this lot
     price_per_share: float  # Price paid per share for this lot
+    sale_date: str = None  # Sale date in YYYY-MM-DD format (for closed lots)
+    sale_price: float = None  # Sale price per share (for closed lots)
 
 
 class TradeRecommendation(BaseModel):
@@ -126,7 +145,7 @@ def run_sql(query: str) -> str:
         run_sql("SELECT symbol, close FROM stock_prices WHERE date = '2024-01-15'")
     """
 
-    db_path = config.DATABASE_PATH
+    db_path = config.STOCK_HISTORY_DATABASE_PATH
     assert Path(db_path).exists(), f"Database file not found: {db_path}"
     assert query and query.strip(), "Empty query provided"
 
@@ -360,18 +379,33 @@ def apply_trades_to_portfolio(original_portfolio: dict, trade_recommendations: l
 
             current_lots = positions[symbol]["lots"]
 
+            # Initialize closed_lots for this symbol if needed
+            if "closed_lots" not in new_portfolio:
+                new_portfolio["closed_lots"] = {}
+            if symbol not in new_portfolio["closed_lots"]:
+                new_portfolio["closed_lots"][symbol] = []
+
             # Sell from oldest lots first (FIFO)
             remaining_to_sell = shares_to_sell
 
             while remaining_to_sell > 0:
                 lot = current_lots[0]
                 if lot.shares <= remaining_to_sell:
-                    # Sell entire lot
+                    # Sell entire lot - move to closed_lots
+                    closed_lot = Lot(date=lot.date, shares=lot.shares, price_per_share=lot.price_per_share, sale_date=today, sale_price=trade.price)
+                    new_portfolio["closed_lots"][symbol].append(closed_lot)
                     remaining_to_sell -= lot.shares
                     current_lots = current_lots[1:]
                 else:
-                    # Partial lot sale - create new lot with remaining shares
+                    # Partial lot sale
+                    shares_sold = remaining_to_sell
                     remaining_shares = lot.shares - remaining_to_sell
+
+                    # Create closed lot for sold portion
+                    closed_lot = Lot(date=lot.date, shares=shares_sold, price_per_share=lot.price_per_share, sale_date=today, sale_price=trade.price)
+                    new_portfolio["closed_lots"][symbol].append(closed_lot)
+
+                    # Update current lot with remaining shares
                     new_lot = Lot(date=lot.date, shares=remaining_shares, price_per_share=lot.price_per_share)
                     current_lots[0] = new_lot
                     remaining_to_sell = 0
@@ -414,48 +448,55 @@ def apply_trades_to_portfolio(original_portfolio: dict, trade_recommendations: l
     return None
 
 
-def convert_lots_to_dicts(portfolio: dict) -> dict:
-    """Convert Lot dataclass objects to dictionaries for JSON serialization."""
-    portfolio_copy = copy.deepcopy(portfolio)
-    for symbol, position in portfolio_copy.get("positions", {}).items():
-        if "lots" in position:
-            position["lots"] = [asdict(lot) for lot in position["lots"]]
-    return portfolio_copy
-
-
-def convert_dicts_to_lots(portfolio: dict) -> dict:
-    """Convert lot dictionaries to Lot dataclass objects after JSON deserialization."""
-    portfolio_copy = copy.deepcopy(portfolio)
-    for symbol, position in portfolio_copy.get("positions", {}).items():
-        if "lots" in position:
-            position["lots"] = [
-                Lot(date=lot_dict["date"], shares=lot_dict["shares"], price_per_share=lot_dict["price_per_share"]) for lot_dict in position["lots"]
-            ]
-    return portfolio_copy
-
-
 def load_portfolio() -> dict:
-    """Load portfolio from file and convert dictionaries to Lot objects."""
-    import json
-
-    with open(config.PORTFOLIO_FILE, "r") as f:
+    """Load portfolio from JSON file and convert lot dicts to Lot objects."""
+    portfolio_file = config.PORTFOLIO_FILE
+    with open(portfolio_file, "r") as f:
         portfolio = json.load(f)
 
-    # Convert lot dictionaries to Lot dataclass objects
-    return convert_dicts_to_lots(portfolio)
+    # Convert lot dictionaries to Lot objects for positions
+    for symbol, position in portfolio.get("positions", {}).items():
+        position["lots"] = [Lot(**lot_dict) for lot_dict in position.get("lots", [])]
+
+    # Convert closed_lots dictionaries to Lot objects
+    closed_lots = portfolio.get("closed_lots", {})
+    for symbol, lots in closed_lots.items():
+        closed_lots[symbol] = [Lot(**lot_dict) for lot_dict in lots]
+
+    # Initialize closed_lots if not present
+    if "closed_lots" not in portfolio:
+        portfolio["closed_lots"] = {}
+
+    return portfolio
 
 
 def save_portfolio(portfolio: dict):
-    """Save portfolio to file."""
-    import json
-
+    """Save portfolio to JSON file and update history snapshot."""
     # Convert Lot objects to dictionaries for JSON serialization
-    portfolio_for_json = convert_lots_to_dicts(portfolio)
+    portfolio_for_json = copy.deepcopy(portfolio)
+    for symbol, position in portfolio_for_json.get("positions", {}).items():
+        position["lots"] = [asdict(lot) for lot in position.get("lots", [])]
 
-    with open(config.PORTFOLIO_FILE, "w") as f:
+    # Convert closed_lots Lot objects to dictionaries
+    closed_lots = portfolio_for_json.get("closed_lots", {})
+    for symbol, lots in closed_lots.items():
+        closed_lots[symbol] = [asdict(lot) for lot in lots]
+
+    # Save to JSON file
+    portfolio_file = config.PORTFOLIO_FILE
+    with open(portfolio_file, "w") as f:
         json.dump(portfolio_for_json, f, indent=2)
 
-    logger.info(f"✅ Portfolio saved to {config.PORTFOLIO_FILE}")
+    # Save snapshot to database for historical tracking
+    portfolio_db = PortfolioDatabase()
+    snapshot_date = portfolio.get("prices_as_of", datetime.now().strftime("%Y-%m-%d"))
+    portfolio_db.save_portfolio_snapshot(
+        date=snapshot_date,
+        cash=portfolio.get("cash", 0),
+        positions_value=portfolio.get("positions_value", 0),
+        total_value=portfolio.get("total_value", 0),
+        position_count=len(portfolio.get("positions", {})),
+    )
 
 
 # Define the agent nodes

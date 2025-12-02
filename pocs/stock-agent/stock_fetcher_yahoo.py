@@ -1,15 +1,14 @@
 import logging
 import time
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional
 
+import config
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from tqdm import tqdm
-
-import config
 from stock_history_database import StockHistoryDatabase
+from tqdm import tqdm
 
 # Setup logging
 config.setup_logging()
@@ -23,8 +22,9 @@ class StockFetcher:
         self.db = db
         self.rate_limit_delay = 0.5  # Delay between requests to avoid rate limiting
 
-        # Date range for 3 years
-        self.end_date = datetime.now()
+        # Date range for 3 years (use UTC for Yahoo Finance API)
+        # Note: yfinance end date is exclusive, so add 1 day to include today
+        self.end_date = datetime.now(timezone.utc) + timedelta(days=1)
         self.start_date = self.end_date - timedelta(days=3 * 365)
 
     def fetch_stock_info(self, symbol: str) -> Optional[Dict]:
@@ -38,9 +38,7 @@ class StockFetcher:
             # Get stock info
             info = ticker.info
             assert info is not None, f"No data available for {symbol}"
-            assert info.get("regularMarketPrice") is not None, (
-                f"No data available for {symbol}"
-            )
+            assert info.get("regularMarketPrice") is not None, f"No data available for {symbol}"
 
             # Get historical data
             history = ticker.history(
@@ -104,9 +102,7 @@ class StockFetcher:
                 "trailingPE": info.get("trailingPE"),
                 "pegRatio": info.get("pegRatio"),
                 "priceToBook": info.get("priceToBook"),
-                "priceToSalesTrailing12Months": info.get(
-                    "priceToSalesTrailing12Months"
-                ),
+                "priceToSalesTrailing12Months": info.get("priceToSalesTrailing12Months"),
                 "enterpriseToRevenue": info.get("enterpriseToRevenue"),
                 "enterpriseToEbitda": info.get("enterpriseToEbitda"),
                 "debtToEquity": info.get("debtToEquity"),
@@ -125,9 +121,7 @@ class StockFetcher:
             # Clean up None values and convert to proper types
             cleaned_fundamentals = {}
             for key, value in fundamentals.items():
-                if value is not None and not (
-                    isinstance(value, float) and np.isnan(value)
-                ):
+                if value is not None and not (isinstance(value, float) and np.isnan(value)):
                     try:
                         cleaned_fundamentals[key] = float(value)
                     except (ValueError, TypeError):
@@ -152,9 +146,7 @@ class StockFetcher:
             # Clean up statistics data
             cleaned_statistics = {}
             for key, value in statistics.items():
-                if value is not None and not (
-                    isinstance(value, float) and np.isnan(value)
-                ):
+                if value is not None and not (isinstance(value, float) and np.isnan(value)):
                     try:
                         if key in [
                             "averageVolume10days",
@@ -237,11 +229,7 @@ class StockFetcher:
                 "volume": latest_price["volume"],
                 "52_week_high": price_range.max(),
                 "52_week_low": price_range.min(),
-                "price_change_1y": (
-                    (latest_price["close"] - data["prices"].iloc[0]["close"])
-                    / data["prices"].iloc[0]["close"]
-                )
-                * 100,
+                "price_change_1y": ((latest_price["close"] - data["prices"].iloc[0]["close"]) / data["prices"].iloc[0]["close"]) * 100,
                 "data_points": len(data["prices"]),
             }
 
@@ -268,17 +256,13 @@ if __name__ == "__main__":
     fetcher = StockFetcher(db)
 
     # Fetch data for a few major stocks as test
-    test_symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+    test_symbols = ["NDX", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
 
     print("Testing with major stocks...")
-    fetcher.fetch_stocks(symbols=test_symbols, force_update=True)
+    fetcher.fetch_stocks(symbols=test_symbols)
 
     # Print summaries
     for symbol in test_symbols:
         summary = fetcher.get_stock_summary(symbol)
         if summary:
-            print(
-                f"\n{symbol}: ${summary['latest_close']:.2f}, "
-                f"Volume: {summary['volume']:,}, "
-                f"Data points: {summary['data_points']}"
-            )
+            print(f"\n{symbol}: ${summary['latest_close']:.2f}, Volume: {summary['volume']:,}, Data points: {summary['data_points']}")

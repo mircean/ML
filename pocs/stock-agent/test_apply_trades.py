@@ -38,7 +38,8 @@ class TestApplyTradesToPortfolioBasic(unittest.TestCase):
                     "current_price": 500.0,
                     "current_value": 2500.0
                 }
-            }
+            },
+            "closed_lots": {}
         }
 
         # Portfolio with multiple lots for FIFO testing
@@ -55,7 +56,8 @@ class TestApplyTradesToPortfolioBasic(unittest.TestCase):
                     "current_price": 120.0,
                     "current_value": 5400.0  # 45 * 120
                 }
-            }
+            },
+            "closed_lots": {}
         }
 
     def test_1_no_trades(self):
@@ -155,6 +157,17 @@ class TestApplyTradesToPortfolioBasic(unittest.TestCase):
         # Verify AAPL position is completely removed
         self.assertNotIn("AAPL", result["positions"])
 
+        # Verify closed_lots contains the sold lot
+        self.assertIn("closed_lots", result)
+        self.assertIn("AAPL", result["closed_lots"])
+        self.assertEqual(len(result["closed_lots"]["AAPL"]), 1)
+        closed_lot = result["closed_lots"]["AAPL"][0]
+        self.assertEqual(closed_lot.shares, 10)
+        self.assertEqual(closed_lot.price_per_share, 150.0)  # Original purchase price
+        self.assertEqual(closed_lot.sale_price, 160.0)
+        self.assertIn("2025-10", closed_lot.sale_date)  # Today's date
+        self.assertEqual(closed_lot.date, "2025-10-01")  # Original purchase date
+
         # Verify GOOGL position remains unchanged
         self.assertEqual(result["positions"]["GOOGL"]["shares"], 5)
         self.assertEqual(result["positions"]["GOOGL"]["current_value"], 2500.0)
@@ -190,6 +203,17 @@ class TestApplyTradesToPortfolioBasic(unittest.TestCase):
         self.assertEqual(remaining_lot.shares, 4)
         self.assertEqual(remaining_lot.price_per_share, 150.0)  # Original purchase price
         self.assertEqual(remaining_lot.date, "2025-10-01")  # Original date
+
+        # Verify closed_lots contains the partial sale
+        self.assertIn("closed_lots", result)
+        self.assertIn("AAPL", result["closed_lots"])
+        self.assertEqual(len(result["closed_lots"]["AAPL"]), 1)
+        closed_lot = result["closed_lots"]["AAPL"][0]
+        self.assertEqual(closed_lot.shares, 6)  # Sold portion
+        self.assertEqual(closed_lot.price_per_share, 150.0)  # Original purchase price
+        self.assertEqual(closed_lot.sale_price, 155.0)
+        self.assertIn("2025-10", closed_lot.sale_date)  # Today's date
+        self.assertEqual(closed_lot.date, "2025-10-01")  # Original purchase date
 
         # Verify GOOGL position remains unchanged
         self.assertEqual(result["positions"]["GOOGL"]["shares"], 5)

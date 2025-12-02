@@ -1,8 +1,6 @@
-import json
 import logging
 import os
 from datetime import datetime
-from pathlib import Path
 
 import agent
 import config
@@ -78,12 +76,6 @@ def main():
 
     logger.info("Starting daily trading automation")
 
-    # Check if it's a weekday
-    day_of_week = datetime.now().weekday()  # Monday=0, Sunday=6
-    if day_of_week >= 5:  # Saturday=5, Sunday=6
-        logger.info(f"Skipping - Weekend (day {day_of_week})")
-        return
-
     # Step 1: Sync data (optional)
     if cfg.skip_data_download:
         logger.info("Skipping data synchronization (--skip-data-download flag set)")
@@ -92,10 +84,8 @@ def main():
         stock_history_sync.main()
         logger.info("Data sync completed successfully")
 
-    # Load portfolio data
-    portfolio_path = Path(config.PORTFOLIO_FILE)
-    with open(portfolio_path, "r") as f:
-        portfolio = json.load(f)
+    # Load portfolio data from database
+    portfolio = agent.load_portfolio()
 
     # Step 2: Run trading agent
     logger.info("Running trading agent...")

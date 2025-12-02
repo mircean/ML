@@ -21,7 +21,7 @@ The trading agent is implemented as a LangGraph StateGraph with the following ke
 The workflow uses conditional routing where `market_analysis` loops back to `tools` until sufficient data is gathered (up to `MAX_TOOL_CALLS` iterations), then proceeds to final recommendations.
 
 ### Database Schema
-The SQLite database (`nasdaq_stocks.db`) contains 5 main tables:
+The SQLite database (`stock_history.db`) contains 5 main tables:
 - `stocks`: Stock metadata (symbol, name, sector, industry)
 - `stock_prices`: Daily OHLCV price data
 - `stock_fundamentals`: Financial ratios and metrics (P/E, market cap, margins, etc.)
@@ -29,7 +29,7 @@ The SQLite database (`nasdaq_stocks.db`) contains 5 main tables:
 - `stock_actions`: Corporate actions (splits, dividends)
 
 ### Memory System
-The agent memory database (`agent_memory.db`) stores historical analysis:
+The agent memory database (`memory.db`) stores historical analysis:
 - `agent_scores`: Daily stock scores (composite, momentum, quality, technical scores)
 - Automatically updated after each agent run (daily overwrite)
 - Enables trend analysis: "Has NVDA been consistently strong for 5 days?"
@@ -119,8 +119,8 @@ The system uses structured prompts with:
 - `stock_fetcher.py`: yfinance integration for stock data
 
 **Data Files:**
-- `nasdaq_stocks.db`: SQLite database (generated)
-- `agent_memory.db`: Memory database for historical scores (generated)
+- `stock_history.db`: SQLite database (generated)
+- `memory.db`: Memory database for historical scores (generated)
 - `portfolio.json`: Portfolio state (generated)
 - `log.txt`: Application logs (generated)
 

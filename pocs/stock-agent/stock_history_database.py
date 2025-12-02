@@ -16,7 +16,7 @@ class StockHistoryDatabase:
     """Database manager for stock data storage and retrieval"""
 
     def __init__(self):
-        self.db_path = config.DATABASE_PATH
+        self.db_path = config.STOCK_HISTORY_DATABASE_PATH
         self.init_database()
 
     def init_database(self):

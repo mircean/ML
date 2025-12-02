@@ -7,10 +7,9 @@ import logging
 from dataclasses import dataclass, fields
 from typing import Final
 
-
 # Database and file constants
-DATABASE_PATH: Final[str] = "nasdaq_stocks.db"
-MEMORY_DATABASE_PATH: Final[str] = "agent_memory.db"
+STOCK_HISTORY_DATABASE_PATH: Final[str] = "stock_history.db"
+MEMORY_DATABASE_PATH: Final[str] = "memory.db"
 PORTFOLIO_FILE: Final[str] = "portfolio.json"
 
 
@@ -32,6 +31,7 @@ class Config:
     llm_model: str = "gpt-5"
     llm_temperature: float = 0.0  # Maximum determinism
     llm_seed: int = 12345  # Fixed seed for reproducible results
+
 
 # Logging
 LOG_LEVEL: Final[str] = "INFO"
@@ -62,15 +62,13 @@ def create_config_parser() -> argparse.ArgumentParser:
         if field_type is bool:
             # For booleans, create both --flag and --no-flag options
             if default_value:
-                parser.add_argument(f"--no-{field_name.replace('_', '-')}",
-                                  dest=field_name, action="store_false",
-                                  help=f"Disable {field_name} (default: {default_value})")
+                parser.add_argument(
+                    f"--no-{field_name.replace('_', '-')}", dest=field_name, action="store_false", help=f"Disable {field_name} (default: {default_value})"
+                )
             else:
-                parser.add_argument(cli_arg, dest=field_name, action="store_true",
-                                  help=f"Enable {field_name} (default: {default_value})")
+                parser.add_argument(cli_arg, dest=field_name, action="store_true", help=f"Enable {field_name} (default: {default_value})")
         else:
-            parser.add_argument(cli_arg, dest=field_name, type=field_type,
-                              help=f"{field_name} (default: {default_value})")
+            parser.add_argument(cli_arg, dest=field_name, type=field_type, help=f"{field_name} (default: {default_value})")
 
     return parser
 

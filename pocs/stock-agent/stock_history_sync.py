@@ -1,24 +1,20 @@
-#!/usr/bin/env python3
 """
 NASDAQ Stock Database Builder
 
 Downloads NASDAQ 100 stock data and stores it in a SQLite database.
 """
 
-import json
 import logging
-import os
 import sqlite3
-import time
 from datetime import datetime
 from typing import Dict, List
 
+import agent
 import config
-import pandas as pd
 import requests
-from bs4 import BeautifulSoup
+from portfolio_database import PortfolioDatabase
+from stock_fetcher_yahoo import StockFetcher
 from stock_history_database import StockHistoryDatabase
-from stock_fetcher import StockFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +25,7 @@ class NasdaqStockFetcher:
     def __init__(self):
         self.base_url = "https://www.nasdaq.com/market-activity/stocks/screener"
         self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-        )
+        self.session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
     def get_nasdaq_stocks(self) -> List[Dict[str, str]]:
         """
@@ -71,104 +63,92 @@ class NasdaqStockFetcher:
         return stocks
 
 
-def init_portfolio():
-    portfolio_path = config.PORTFOLIO_FILE
+def update_portfolio_values(cfg: config.Config):
+    """Update portfolio values based on current stock prices and save daily snapshot."""
+    stock_history_db_path = config.STOCK_HISTORY_DATABASE_PATH
 
-    if not os.path.exists(portfolio_path):
-        portfolio = {
-            "cash": config.DEFAULT_CASH,
-            "positions": {},
-            "total_value": config.DEFAULT_CASH,
-            "positions_value": 0,
-        }
-        with open(portfolio_path, "w") as f:
-            json.dump(portfolio, f, indent=2)
-
-
-def update_portfolio_values():
-    """Update portfolio values based on current stock prices."""
-    db_path = config.DATABASE_PATH
-    portfolio_path = config.PORTFOLIO_FILE
-    init_portfolio()
-    assert os.path.exists(portfolio_path), f"Portfolio file not found: {portfolio_path}"
-
-    # Load portfolio
-    with open(portfolio_path, "r") as f:
-        portfolio = json.load(f)
+    # Load portfolio using agent's function
+    portfolio = agent.load_portfolio()
 
     positions = portfolio.get("positions", {})
     if not positions:
         logger.info("No positions in portfolio, skipping update")
         return
 
-    symbols = list(positions.keys())
+    cash = portfolio.get("cash", cfg.default_cash)
 
-    updated_positions = {}
-    total_value_change = 0
+    # Get the most recent date in the stock_prices table
+    with sqlite3.connect(stock_history_db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT MAX(date) FROM stock_prices
+            """
+        )
+        result = cursor.fetchone()
+
+    assert result and result[0], "No stock price data found in database"
+    latest_price_date = result[0]
 
     logger.info("=" * 50)
     logger.info("UPDATING PORTFOLIO VALUES")
     logger.info("=" * 50)
+    logger.info(f"Using prices as of: {latest_price_date}")
 
-    for symbol in symbols:
-        # Get latest price from database
-        with sqlite3.connect(db_path) as conn:
+    total_positions_value = 0
+
+    for symbol, position in positions.items():
+        shares = position.get("shares", 0)
+
+        # Get latest price from market database
+        with sqlite3.connect(stock_history_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT close, date FROM stock_prices 
-                WHERE symbol = ? 
-                ORDER BY date DESC 
+                SELECT close, date FROM stock_prices
+                WHERE symbol = ?
+                ORDER BY date DESC
                 LIMIT 1
-            """,
+                """,
                 (symbol,),
             )
             result = cursor.fetchall()
 
-        assert result and len(result) > 0
+        assert result, f"No price data found for {symbol}"
+
         current_price = float(result[0][0])
-        date = result[0][1]
+        price_date = result[0][1]
+        current_value = shares * current_price
+        total_positions_value += current_value
 
-        # Update position
-        position = positions[symbol].copy()
-        shares = position["shares"]
-        old_value = position.get("value", position.get("cost", 0))
-        new_value = shares * current_price
+        # Update position with current price and value
+        position["current_price"] = current_price
+        position["current_value"] = current_value
 
-        position["value"] = round(new_value, 2)
-        updated_positions[symbol] = position
+        logger.info(f"{symbol}: {shares} shares @ ${current_price:.2f} = ${current_value:.2f} [{price_date}]")
 
-        value_change = new_value - old_value
-        total_value_change += value_change
+    total_portfolio_value = cash + total_positions_value
 
-        logger.info(f"{symbol}: {shares} shares @ ${current_price:.2f} = ${new_value:.2f} ({value_change:+.2f}) [{date}]")
+    # Update portfolio totals
+    portfolio["positions_value"] = total_positions_value
+    portfolio["total_value"] = total_portfolio_value
+    portfolio["prices_as_of"] = latest_price_date
 
-        # Update portfolio
-        portfolio["positions"] = updated_positions
+    # Save portfolio using agent's function (handles JSON + DB snapshot)
+    agent.save_portfolio(portfolio)
 
-        # Calculate total portfolio value
-        cash = portfolio.get("cash", 0)
-        positions_value = sum(pos.get("value", 0) for pos in updated_positions.values())
-        total_portfolio_value = cash + positions_value
-
-        portfolio["total_value"] = round(total_portfolio_value, 2)
-        portfolio["positions_value"] = round(positions_value, 2)
-
-        # Save updated portfolio
-        with open(portfolio_path, "w") as f:
-            json.dump(portfolio, f, indent=2)
-
-        logger.info("PORTFOLIO SUMMARY:")
-        logger.info(f"Cash: ${cash:.2f}")
-        logger.info(f"Positions value: ${positions_value:.2f}")
-        logger.info(f"Total portfolio value: ${total_portfolio_value:.2f}")
-        logger.info(f"Total value change: {total_value_change:+.2f}")
-        logger.info(f"Portfolio updated: {portfolio_path}")
-        logger.info("=" * 50)
+    logger.info("PORTFOLIO SUMMARY:")
+    logger.info(f"Cash: ${cash:.2f}")
+    logger.info(f"Positions value: ${total_positions_value:.2f}")
+    logger.info(f"Total portfolio value: ${total_portfolio_value:.2f}")
+    logger.info(f"Portfolio updated and snapshot saved for {latest_price_date}")
+    logger.info("=" * 50)
 
 
 def main():
     """Main application entry point"""
+    cfg = config.parse_config()
+
     # Setup logging
     config.setup_logging()
 
@@ -184,9 +164,9 @@ def main():
     db = StockHistoryDatabase()
     fetcher = StockFetcher(db)
 
-    # Fetch NASDAQ 100 stock list
+    # Fetch NASDAQ 100 stock list and include ^NDX (NASDAQ 100 Index)
     nasdaq_stocks = nasdaq_fetcher.get_nasdaq_stocks()
-    symbols = [stock["symbol"] for stock in nasdaq_stocks if stock["symbol"]]
+    symbols = ["^NDX"] + [stock["symbol"] for stock in nasdaq_stocks if stock["symbol"]]
 
     # Download and store NASDAQ 100 data
     logger.info("Downloading NASDAQ 100 stock data...")
@@ -205,7 +185,30 @@ def main():
 
     # Update portfolio values with latest prices
     logger.info("Updating portfolio with latest stock prices...")
-    update_portfolio_values()
+    update_portfolio_values(cfg)
+
+    # Save NASDAQ 100 index history for benchmarking
+    logger.info("Saving NASDAQ 100 index history...")
+    market_db_path = config.STOCK_HISTORY_DATABASE_PATH
+    with sqlite3.connect(market_db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT close, date FROM stock_prices
+            WHERE symbol = '^NDX'
+            ORDER BY date DESC
+            LIMIT 1
+            """
+        )
+        ndx_result = cursor.fetchall()
+
+    assert ndx_result, "NASDAQ 100 (^NDX) data not found in database"
+    ndx_value = float(ndx_result[0][0])
+    ndx_date = ndx_result[0][1]
+
+    portfolio_db = PortfolioDatabase()
+    portfolio_db.save_nasdaq100_snapshot(date=ndx_date, value=ndx_value)
+    logger.info(f"Saved NASDAQ 100 snapshot: {ndx_value:.2f} for {ndx_date}")
 
     logger.info(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
