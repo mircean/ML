@@ -50,35 +50,35 @@ CREATE TABLE stock_prices (
 );
 ```
 
-### 3. `stock_fundamentals` - Financial metrics and ratios
-Comprehensive fundamental analysis data for each stock.
+### 3. `stock_fundamentals` - Financial metrics and ratios (VIEW - latest only)
+Latest fundamental analysis data for each stock. This is a VIEW that automatically returns
+only the most recent snapshot from the underlying historical data.
 
-**Schema:**
+**Available Columns:**
 ```sql
-CREATE TABLE stock_fundamentals (
-    symbol TEXT,                   -- Stock ticker
-    date DATE,                     -- Date of the data
-    market_cap REAL,              -- Market capitalization
-    enterprise_value REAL,        -- Enterprise value
-    pe_ratio REAL,                -- Price-to-Earnings ratio
-    peg_ratio REAL,               -- Price/Earnings to Growth ratio
-    price_to_book REAL,           -- Price-to-Book ratio
-    price_to_sales REAL,          -- Price-to-Sales ratio
-    ev_to_revenue REAL,           -- Enterprise Value to Revenue
-    ev_to_ebitda REAL,            -- Enterprise Value to EBITDA
-    debt_to_equity REAL,          -- Debt-to-Equity ratio
-    return_on_equity REAL,        -- Return on Equity (%)
-    return_on_assets REAL,        -- Return on Assets (%)
-    gross_margin REAL,            -- Gross profit margin (%)
-    operating_margin REAL,        -- Operating margin (%)
-    profit_margin REAL,           -- Net profit margin (%)
-    beta REAL,                    -- Stock beta (volatility vs market)
-    dividend_yield REAL,          -- Dividend yield (%)
-    payout_ratio REAL,            -- Dividend payout ratio (%)
-    shares_outstanding REAL,      -- Number of shares outstanding
-    float_shares REAL,            -- Number of shares available for trading
-    PRIMARY KEY (symbol, date)
-);
+-- Query this VIEW (not the _history table)
+SELECT
+    symbol,                       -- Stock ticker
+    market_cap,                   -- Market capitalization
+    enterprise_value,             -- Enterprise value
+    pe_ratio,                     -- Price-to-Earnings ratio
+    peg_ratio,                    -- Price/Earnings to Growth ratio
+    price_to_book,                -- Price-to-Book ratio
+    price_to_sales,               -- Price-to-Sales ratio
+    ev_to_revenue,                -- Enterprise Value to Revenue
+    ev_to_ebitda,                 -- Enterprise Value to EBITDA
+    debt_to_equity,               -- Debt-to-Equity ratio
+    return_on_equity,             -- Return on Equity (%)
+    return_on_assets,             -- Return on Assets (%)
+    gross_margin,                 -- Gross profit margin (%)
+    operating_margin,             -- Operating margin (%)
+    profit_margin,                -- Net profit margin (%)
+    beta,                         -- Stock beta (volatility vs market)
+    dividend_yield,               -- Dividend yield (%)
+    payout_ratio,                 -- Dividend payout ratio (%)
+    shares_outstanding,           -- Number of shares outstanding
+    float_shares                  -- Number of shares available for trading
+FROM stock_fundamentals;
 ```
 
 ### 4. `stock_actions` - Corporate actions
@@ -96,32 +96,32 @@ CREATE TABLE stock_actions (
 );
 ```
 
-### 5. `stock_statistics` - Trading statistics
-Statistical data about stock performance and trading patterns.
+### 5. `stock_statistics` - Trading statistics (VIEW - latest only)
+Latest statistical data about stock performance and trading patterns. This is a VIEW that
+automatically returns only the most recent snapshot from the underlying historical data.
 
-**Schema:**
+**Available Columns:**
 ```sql
-CREATE TABLE stock_statistics (
-    symbol TEXT,                   -- Stock ticker
-    date DATE,                     -- Date of the data
-    fifty_two_week_high REAL,     -- 52-week high price
-    fifty_two_week_low REAL,      -- 52-week low price
-    fifty_day_average REAL,       -- 50-day moving average
-    two_hundred_day_average REAL, -- 200-day moving average
-    avg_volume_10day INTEGER,     -- Average volume over 10 days
-    avg_volume_3month INTEGER,    -- Average volume over 3 months
-    shares_short REAL,            -- Number of shares sold short
-    short_ratio REAL,             -- Short interest ratio
-    short_percent_float REAL,     -- Short interest as % of float
-    PRIMARY KEY (symbol, date)
-);
+-- Query this VIEW (not the _history table)
+SELECT
+    symbol,                       -- Stock ticker
+    fifty_two_week_high,          -- 52-week high price
+    fifty_two_week_low,           -- 52-week low price
+    fifty_day_average,            -- 50-day moving average
+    two_hundred_day_average,      -- 200-day moving average
+    avg_volume_10day,             -- Average volume over 10 days
+    avg_volume_3month,            -- Average volume over 3 months
+    shares_short,                 -- Number of shares sold short
+    short_ratio,                  -- Short interest ratio
+    short_percent_float           -- Short interest as % of float
+FROM stock_statistics;
 ```
 
 ## Key Relationships
 
 - All tables link via the `symbol` field
 - `stock_prices` contains daily time series data
-- `stock_fundamentals` and `stock_statistics` typically have one record per stock (latest data)
+- `stock_fundamentals` and `stock_statistics` are VIEWS that automatically return only the latest snapshot (one record per stock)
 - `stock_actions` contains historical events (may have multiple records per stock)
 
 ## Data Coverage
@@ -224,7 +224,7 @@ TOP ALTERNATIVES:
 
 Please use the available tools:
 1. Use `run_sql` to execute SQL queries against this database to answer user questions about stocks, financial metrics, price movements, and market analysis.
-2. Use `search_market_news` to get recent market trends and news
+2. Use `search_web` to get recent market trends and news
 3. Use `analyze_stock_trends` to analyze score trends, volatility, and sustained patterns for specific stocks
 4. Use `compare_portfolio_performance` to compare performance metrics across current portfolio stocks
 5. Use `find_replacement_opportunities` to find holdings with clearly better alternatives available
@@ -314,7 +314,7 @@ Please provide:
 1. **Summary**: A concise overview of your market analysis and key findings
 2. **Trade Recommendations**: Specific actionable trades for each stock with the following format:
    - Action: BUY, SELL, or HOLD
-   - Symbol: Stock ticker (if applicable)
+   - Symbol: Stock ticker. Must always be present.
    - Shares: Number of shares to trade
    - Price: Target price or current price
    - Reasoning: Detailed justification for the recommendation
@@ -332,30 +332,3 @@ IMPORTANT: These scores will be used for programmatic historical tracking. Ensur
 6. **Risk Assessment**: Key risks and concerns identified in your analysis
 
 Focus on providing actionable, specific recommendations based on your research. Include all composite scores for transparency. If no trades are recommended, explain why the current portfolio is optimal."""
-
-
-def get_summary_prompt(portfolio_cash: float, portfolio_positions: dict, recommendations_text: str, cfg: config.Config) -> str:
-    """
-    Get the prompt for the summary/recommendations display.
-
-    Args:
-        portfolio_cash: Available cash amount
-        portfolio_positions: Current stock positions
-        recommendations_text: The AI's final recommendations
-        cfg: Configuration object with trading parameters
-
-    Returns:
-        Formatted summary string
-    """
-    return f"""
-🎯 TRADING ANALYSIS COMPLETE
-
-📊 Portfolio Status:
-- Cash Available: ${portfolio_cash:.2f}
-- Current Positions: {len(portfolio_positions)}/{cfg.max_positions}
-
-📋 FINAL RECOMMENDATIONS:
-{recommendations_text}
-
-✅ Analysis session completed!
-"""

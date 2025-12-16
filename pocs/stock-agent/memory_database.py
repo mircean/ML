@@ -10,7 +10,7 @@ import logging
 import os
 import sqlite3
 import statistics
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 import config
@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 class MemoryDatabase:
     """Enhanced database manager for agent memory storage and advanced analytics"""
 
-    def __init__(self):
-        self.db_path = config.MEMORY_DATABASE_PATH
+    def __init__(self, cfg: config.Config):
+        self.db_path = cfg.memory_db_name
         self.init_database()
 
     def init_database(self):
@@ -91,7 +91,7 @@ class MemoryDatabase:
         """Analyze score trends and stability for a specific stock"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
             cursor.execute(
                 """
@@ -129,11 +129,11 @@ class MemoryDatabase:
                 "symbol": symbol,
                 "days_analyzed": days,
                 "records_found": len(results),
-                "average_composite_score": round(avg_composite, 1),
+                "average_composite_score": round(avg_composite, 2),
                 "current_score": composite_scores[-1],
-                "score_volatility": round(score_volatility, 1),
-                "trend_slope": round(trend_slope, 3),
-                "trend_strength": round(trend_strength, 1),
+                "score_volatility": round(score_volatility, 2),
+                "trend_slope": round(trend_slope, 2),
+                "trend_strength": round(trend_strength, 2),
                 "date_range": f"{dates[0]} to {dates[-1]}",
             }
 
@@ -141,7 +141,7 @@ class MemoryDatabase:
         """Compare all current portfolio positions over specified period"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
             cursor.execute(
                 """
@@ -174,19 +174,19 @@ class MemoryDatabase:
                 portfolio_analysis.append(
                     {
                         "symbol": symbol,
-                        "average_composite_score": round(avg_score, 1),
-                        "vs_portfolio_avg": round(avg_score - avg_portfolio_score, 1),
+                        "average_composite_score": round(avg_score, 2),
+                        "vs_portfolio_avg": round(avg_score - avg_portfolio_score, 2),
                         "trend_slope": trend_data.get("trend_slope", 0),
                         "score_volatility": trend_data.get("score_volatility", 0),
                         "trend_strength": trend_data.get("trend_strength", 0),
                         "record_count": record_count,
-                        "breakdown": {"momentum": round(avg_momentum, 1), "quality": round(avg_quality, 1), "technical": round(avg_technical, 1)},
+                        "breakdown": {"momentum": round(avg_momentum, 2), "quality": round(avg_quality, 2), "technical": round(avg_technical, 2)},
                     }
                 )
 
             return {
                 "days_analyzed": days,
-                "portfolio_average_score": round(avg_portfolio_score, 1),
+                "portfolio_average_score": round(avg_portfolio_score, 2),
                 "holdings_count": len(results),
                 "holdings_performance": portfolio_analysis,
                 "strongest_holding": portfolio_analysis[0]["symbol"] if portfolio_analysis else None,
@@ -196,7 +196,7 @@ class MemoryDatabase:
         """Find holdings that have clearly better alternatives available for strategic replacement"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
             # Get average scores for holdings vs alternatives
             cursor.execute(
@@ -230,9 +230,9 @@ class MemoryDatabase:
                     underperformers.append(
                         {
                             "symbol": symbol,
-                            "average_score": round(score, 1),
-                            "best_alternative_score": round(best_alternative_score, 1),
-                            "performance_gap": round(gap, 1),
+                            "average_score": round(score, 2),
+                            "best_alternative_score": round(best_alternative_score, 2),
+                            "performance_gap": round(gap, 2),
                             "trend_slope": trend_data.get("trend_slope", 0),
                             "score_volatility": trend_data.get("score_volatility", 0),
                             "trend_strength": trend_data.get("trend_strength", 0),
@@ -248,14 +248,14 @@ class MemoryDatabase:
                 "alternatives_analyzed": len(alternatives),
                 "underperformers_found": len(underperformers),
                 "underperformers": underperformers,
-                "best_alternative_score": round(best_alternative_score, 1),
+                "best_alternative_score": round(best_alternative_score, 2),
             }
 
     def find_stocks_to_sell(self, days: int = 7, min_score_threshold: float = 60.0) -> Dict:
         """Find holdings that should be sold due to poor fundamental performance"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
             # Get current holdings with their performance metrics
             cursor.execute(
@@ -295,12 +295,12 @@ class MemoryDatabase:
                 sell_candidates.append(
                     {
                         "symbol": symbol,
-                        "average_score": round(avg_score, 1),
-                        "trend_slope": round(trend_slope, 1),
-                        "score_volatility": round(score_volatility, 1),
-                        "trend_strength": round(trend_strength, 1),
+                        "average_score": round(avg_score, 2),
+                        "trend_slope": round(trend_slope, 2),
+                        "score_volatility": round(score_volatility, 2),
+                        "trend_strength": round(trend_strength, 2),
                         "score_threshold": min_score_threshold,  # For reference only
-                        "breakdown": {"momentum": round(avg_momentum, 1), "quality": round(avg_quality, 1), "technical": round(avg_technical, 1)},
+                        "breakdown": {"momentum": round(avg_momentum, 2), "quality": round(avg_quality, 2), "technical": round(avg_technical, 2)},
                     }
                 )
 
@@ -319,7 +319,7 @@ class MemoryDatabase:
         """Find best available stocks (non-holdings) when cash is available"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
             # Get non-holdings (alternatives) with strong performance
             cursor.execute(
@@ -360,11 +360,11 @@ class MemoryDatabase:
                 buy_candidates.append(
                     {
                         "symbol": symbol,
-                        "average_score": round(avg_score, 1),
-                        "trend_slope": round(trend_slope, 1),
-                        "score_volatility": round(score_volatility, 1),
-                        "trend_strength": round(trend_strength, 1),
-                        "breakdown": {"momentum": round(avg_momentum, 1), "quality": round(avg_quality, 1), "technical": round(avg_technical, 1)},
+                        "average_score": round(avg_score, 2),
+                        "trend_slope": round(trend_slope, 2),
+                        "score_volatility": round(score_volatility, 2),
+                        "trend_strength": round(trend_strength, 2),
+                        "breakdown": {"momentum": round(avg_momentum, 2), "quality": round(avg_quality, 2), "technical": round(avg_technical, 2)},
                     }
                 )
 
@@ -390,7 +390,7 @@ class MemoryDatabase:
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
             # Get target stock's data
             cursor.execute(
@@ -464,26 +464,27 @@ class MemoryDatabase:
             return {
                 "symbol": symbol,
                 "days_analyzed": days,
-                "current_average_score": round(current_score, 1),
+                "current_average_score": round(current_score, 2),
                 "currently_held": is_currently_held,
-                "immediate_vs_alternatives": round(immediate_vs_alternatives, 1),
-                "sustained_performance_gap": round(sustained_performance, 1),
-                "trend_slope": round(trend_slope, 1),
-                "trend_strength": round(trend_strength, 1),
-                "score_volatility": round(score_volatility, 1),
+                "immediate_vs_alternatives": round(immediate_vs_alternatives, 2),
+                "sustained_performance_gap": round(sustained_performance, 2),
+                "trend_slope": round(trend_slope, 2),
+                "trend_strength": round(trend_strength, 2),
+                "score_volatility": round(score_volatility, 2),
                 "confidence_factors": confidence_factors,
                 "portfolio_context": {
                     "holdings_count": len(holdings_scores),
                     "alternatives_count": len(alternatives_scores),
-                    "avg_holdings_score": round(statistics.mean(holdings_scores), 1) if holdings_scores else None,
-                    "best_alternative_score": round(max(alternatives_scores), 1) if alternatives_scores else None,
+                    "avg_holdings_score": round(statistics.mean(holdings_scores), 2) if holdings_scores else None,
+                    "best_alternative_score": round(max(alternatives_scores), 2) if alternatives_scores else None,
                 },
             }
 
 
 if __name__ == "__main__":
     # Test the enhanced memory database
-    memory_db = MemoryDatabase()
+    cfg = config.Config()
+    memory_db = MemoryDatabase(cfg)
     print("Enhanced memory database initialized")
 
     # Test analysis methods (if data exists)

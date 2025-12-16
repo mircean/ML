@@ -6,13 +6,14 @@ An AI trading agent built with LangGraph that thinks after each tool call.
 Uses NASDAQ database and web search to make trading decisions.
 """
 
-import copy
 import json
 import logging
 import os
+import signal
 import sqlite3
-from dataclasses import asdict, dataclass
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Dict, List, Optional
 
@@ -34,37 +35,10 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from memory_database import MemoryDatabase
-from portfolio_database import PortfolioDatabase
+from portfolio import Portfolio
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Lot:
-    """
-    A lot represents a specific purchase of shares.
-
-    For active lots (in positions):
-        - date: purchase date
-        - shares: number of shares
-        - price_per_share: purchase price per share
-        - sale_date: None
-        - sale_price: None
-
-    For closed lots (in closed_lots):
-        - date: purchase date
-        - shares: number of shares sold
-        - price_per_share: purchase price per share
-        - sale_date: date of sale
-        - sale_price: sale price per share
-    """
-
-    date: str  # Purchase date in YYYY-MM-DD format
-    shares: int  # Number of shares in this lot
-    price_per_share: float  # Price paid per share for this lot
-    sale_date: str = None  # Sale date in YYYY-MM-DD format (for closed lots)
-    sale_price: float = None  # Sale price per share (for closed lots)
 
 
 class TradeRecommendation(BaseModel):
@@ -101,22 +75,6 @@ class TradingAnalysis(BaseModel):
     top_alternatives: List[StockScore]  # Top alternatives not held
 
 
-@dataclass
-class Position:
-    symbol: str
-    shares: float
-    avg_cost: float
-    current_price: float = 0.0
-
-    @property
-    def market_value(self) -> float:
-        return self.shares * self.current_price
-
-    @property
-    def total_return(self) -> float:
-        return (self.current_price - self.avg_cost) / self.avg_cost * 100 if self.avg_cost > 0 else 0.0
-
-
 # Define the graph state
 class TradingState(Dict):
     messages: Annotated[List[BaseMessage], add_messages]
@@ -126,42 +84,50 @@ class TradingState(Dict):
     trading_analysis: Optional[TradingAnalysis] = None  # Structured output from LLM
 
 
-@tool
-def run_sql(query: str) -> str:
-    """
-    Execute a SQL query against the NASDAQ stocks database.
+def create_run_sql_tool(cfg: config.Config):
+    """Factory function to create run_sql tool with config context."""
 
-    This function provides access to a comprehensive database of NASDAQ 100 stocks
-    with 3 years of historical data including prices, fundamentals, and statistics.
+    @tool
+    def run_sql(query: str) -> str:
+        """
+        Execute a SQL query against the NASDAQ stocks database.
 
-    Args:
-        query: SQL SELECT query to execute (INSERT/UPDATE/DELETE not allowed)
+        This function provides access to a comprehensive database of NASDAQ 100 stocks
+        with 3 years of historical data including prices, fundamentals, and statistics.
 
-    Returns:
-        JSON string with query results, including data, columns, and metadata
+        Args:
+            query: SQL SELECT query to execute (INSERT/UPDATE/DELETE not allowed)
 
-    Example:
-        run_sql("SELECT symbol, name, sector FROM stocks LIMIT 10")
-        run_sql("SELECT symbol, close FROM stock_prices WHERE date = '2024-01-15'")
-    """
+        Returns:
+            JSON string with query results, including data, columns, and metadata
 
-    db_path = config.STOCK_HISTORY_DATABASE_PATH
-    assert Path(db_path).exists(), f"Database file not found: {db_path}"
-    assert query and query.strip(), "Empty query provided"
+        Example:
+            run_sql("SELECT symbol, name, sector FROM stocks LIMIT 10")
+            run_sql("SELECT symbol, close FROM stock_prices WHERE date = '2024-01-15'")
+        """
 
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row  # Enable column access by name
-        cursor = conn.cursor()
+        db_path = cfg.stock_history_db_name
+        assert Path(db_path).exists(), f"Database file not found: {db_path}"
+        assert query and query.strip(), "Empty query provided"
 
-        cursor.execute(query)
+        def execute_query():
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(query)
+                columns = [description[0] for description in cursor.description] if cursor.description else []
+                rows = cursor.fetchall()
+                return columns, rows
 
-        # Get column names
-        columns = [description[0] for description in cursor.description] if cursor.description else []
+        # Execute query with timeout using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(execute_query)
+            try:
+                columns, rows = future.result(timeout=300)  # 5 minute timeout
+            except FuturesTimeoutError:
+                raise TimeoutError(f"SQL query exceeded 5 minute timeout: {query[:100]}")
 
-        # Fetch results
-        rows = cursor.fetchall()
-
-        # Convert rows to list of dictionaries
+        # Process results
         data = []
         for row in rows:
             row_dict = {}
@@ -175,340 +141,182 @@ def run_sql(query: str) -> str:
                     row_dict[columns[i]] = str(value)
             data.append(row_dict)
 
-        result = {
-            "data": data,
-            "columns": columns,
-            "row_count": len(data),
-            "query_executed": query,
-        }
-
+        result = {"columns": columns, "data": data, "row_count": len(data)}
         return json.dumps(result, indent=2)
 
-
-@tool
-def search_market_news(query: str) -> str:
-    """Search for recent market news and analysis."""
-    try:
-        search = TavilySearchResults(max_results=3)
-        results = search.invoke(query)
-        return json.dumps({"success": True, "query": query, "results": results}, indent=2)
-    except Exception as e:
-        return json.dumps(
-            {
-                "success": False,
-                "error": str(e),
-                "message": "Web search not available",
-            }
-        )
+    return run_sql
 
 
-@tool
-def analyze_stock_trends(symbol: str, days: int = 14) -> str:
-    """Analyze stock score trends, volatility, and sustained patterns for a specific stock.
+def create_search_web_tool(cfg: config.Config):
+    """Factory function to create search_web tool with config context."""
 
-    Args:
-        symbol: Stock ticker to analyze (e.g. 'AAPL', 'GOOGL')
-        days: Number of days to analyze (default 14)
-    """
-    try:
-        memory_db = MemoryDatabase()
-        analysis = memory_db.analyze_stock_trends(symbol, days)
-        return json.dumps(analysis, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e), "symbol": symbol})
+    @tool
+    def search_web(query: str) -> str:
+        """
+        Search the web for market information and analysis.
 
+        Can search for news articles, analyst reports, sector trends, or general information.
+        To find news, include "news" in your query (e.g., "NVDA news", "Federal Reserve latest news").
 
-@tool
-def compare_portfolio_performance(days: int = 7) -> str:
-    """Compare performance metrics across all current portfolio stocks.
+        Args:
+            query: Search query (e.g., "NVDA earnings", "semiconductor sector outlook", "GOOGL news")
+        """
+        try:
+            end_date = cfg.as_of_date if cfg.as_of_date else None
 
-    Args:
-        days: Number of days to analyze (default 7)
-    """
-    try:
-        memory_db = MemoryDatabase()
-        comparison = memory_db.compare_portfolio_performance(days)
-        return json.dumps(comparison, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-@tool
-def find_replacement_opportunities(min_gap: float = 5.0, days: int = 7) -> str:
-    """Find holdings that have clearly better alternatives available for strategic replacement.
-
-    Args:
-        min_gap: Minimum performance gap vs best alternative (default 5.0)
-        days: Number of days to analyze (default 7)
-    """
-    try:
-        memory_db = MemoryDatabase()
-        opportunities = memory_db.find_replacement_opportunities(min_gap, days)
-        return json.dumps(opportunities, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-@tool
-def find_stocks_to_sell(days: int = 7, min_score_threshold: float = 60.0) -> str:
-    """Find holdings that should be sold due to poor fundamental performance.
-
-    Args:
-        days: Number of days to analyze (default 7)
-        min_score_threshold: Minimum score threshold below which stocks are candidates for selling (default 60.0)
-    """
-    try:
-        memory_db = MemoryDatabase()
-        sell_candidates = memory_db.find_stocks_to_sell(days, min_score_threshold)
-        return json.dumps(sell_candidates, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-@tool
-def find_stocks_to_buy(days: int = 7, min_score_threshold: float = 75.0, top_n: int = 10) -> str:
-    """Find best available stocks (non-holdings) when cash is available.
-
-    Args:
-        days: Number of days to analyze (default 7)
-        min_score_threshold: Minimum score threshold for buy candidates (default 75.0)
-        top_n: Maximum number of buy candidates to return (default 10)
-    """
-    try:
-        memory_db = MemoryDatabase()
-        buy_candidates = memory_db.find_stocks_to_buy(days, min_score_threshold, top_n)
-        return json.dumps(buy_candidates, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-@tool
-def get_confidence_metrics(symbol: str = None) -> str:
-    """Get comprehensive confidence metrics for trading decisions.
-
-    Args:
-        symbol: Optional stock ticker to focus on, or None for overall metrics
-    """
-    try:
-        memory_db = MemoryDatabase()
-        metrics = memory_db.get_confidence_metrics(symbol)
-        return json.dumps(metrics, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e), "symbol": symbol})
-
-
-# Helper functions
-def print_portfolio(portfolio: dict, label: str = "Portfolio", use_markdown: bool = False):
-    """Build portfolio string in a consistent format."""
-    cash = portfolio.get("cash", 0)
-    positions = portfolio.get("positions", {})
-
-    # Header
-    if use_markdown:
-        text = f"## {label}\n\n"
-        text += "| Symbol | Shares | Current Price | Current Value |\n"
-        text += "|--------|-------:|:-------------:|--------------:|\n"
-    else:
-        text = f"📊 {label}:\n"
-
-    # Sort positions by value (descending)
-    sorted_positions = sorted(positions.items(), key=lambda x: x[1].get("current_value"), reverse=True)
-
-    total_positions_value = 0
-    for symbol, position in sorted_positions:
-        shares = position.get("shares")
-        current_price = position.get("current_price", 0)
-        value = position.get("current_value")
-        total_positions_value += value
-
-        if use_markdown:
-            text += f"| {symbol} | {shares:,} | ${current_price:.2f} | ${value:,.2f} |\n"
-        else:
-            text += f"  {symbol:<4}: \tshares: {shares} \tvalue: ${value:.2f}\n"
-
-    # Footer
-    total_value = cash + total_positions_value
-    if use_markdown:
-        text += f"| **Cash** | | | **${cash:,.2f}** |\n"
-        text += f"| **TOTAL** | | | **${total_value:,.2f}** |\n"
-    else:
-        text += f"  Cash: ${cash:.2f}\n"
-        text += f"  Total Value: ${total_value:.2f}"
-
-    return text
-
-
-def update_position(position: dict, current_price: float):
-    """Update position with current price and value."""
-    position["shares"] = sum(lot.shares for lot in position["lots"])
-    position["current_price"] = current_price
-    position["current_value"] = position["shares"] * position["current_price"]
-
-
-def apply_trades_to_portfolio(original_portfolio: dict, trade_recommendations: list) -> dict:
-    """Apply trade recommendations to create a new portfolio. Processes SELL orders first, then BUY orders."""
-    logger.info("📈 Applying Recommended Portfolio Changes:")
-
-    new_portfolio = copy.deepcopy(original_portfolio)
-    cash = new_portfolio.get("cash", 0)
-    positions = new_portfolio.get("positions", {})
-
-    trades_recommended = 0
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    # Sort trades: SELL first, then BUY, then HOLD
-    action_priority = {"SELL": 0, "BUY": 1, "HOLD": 2}
-    sorted_trades = sorted(trade_recommendations, key=lambda t: action_priority.get(t.action, 3))
-
-    # Process all trades in sorted order
-    for trade in sorted_trades:
-        symbol = trade.symbol
-        assert symbol, "Trade must have symbol"
-        assert trade.action in ["SELL", "BUY", "HOLD"], "Trade action must be SELL or BUY or HOLD"
-        assert trade.action == "HOLD" or trade.shares and trade.price, "Trade must have symbol, shares, and price"
-        if trade.action == "SELL":
-            assert symbol in positions and "lots" in positions[symbol], "Symbol must be in positions and lots must be in positions"
-            assert trade.shares <= positions[symbol]["shares"], "Trade shares must be less than or equal to position shares"
-
-            trades_recommended += 1
-            shares_to_sell = int(trade.shares)
-            logger.info(f"  {trade.action} {symbol}: {shares_to_sell} shares at ${trade.price:.2f}")
-
-            # Add cash from sale
-            cash += shares_to_sell * trade.price
-
-            current_lots = positions[symbol]["lots"]
-
-            # Initialize closed_lots for this symbol if needed
-            if "closed_lots" not in new_portfolio:
-                new_portfolio["closed_lots"] = {}
-            if symbol not in new_portfolio["closed_lots"]:
-                new_portfolio["closed_lots"][symbol] = []
-
-            # Sell from oldest lots first (FIFO)
-            remaining_to_sell = shares_to_sell
-
-            while remaining_to_sell > 0:
-                lot = current_lots[0]
-                if lot.shares <= remaining_to_sell:
-                    # Sell entire lot - move to closed_lots
-                    closed_lot = Lot(date=lot.date, shares=lot.shares, price_per_share=lot.price_per_share, sale_date=today, sale_price=trade.price)
-                    new_portfolio["closed_lots"][symbol].append(closed_lot)
-                    remaining_to_sell -= lot.shares
-                    current_lots = current_lots[1:]
-                else:
-                    # Partial lot sale
-                    shares_sold = remaining_to_sell
-                    remaining_shares = lot.shares - remaining_to_sell
-
-                    # Create closed lot for sold portion
-                    closed_lot = Lot(date=lot.date, shares=shares_sold, price_per_share=lot.price_per_share, sale_date=today, sale_price=trade.price)
-                    new_portfolio["closed_lots"][symbol].append(closed_lot)
-
-                    # Update current lot with remaining shares
-                    new_lot = Lot(date=lot.date, shares=remaining_shares, price_per_share=lot.price_per_share)
-                    current_lots[0] = new_lot
-                    remaining_to_sell = 0
-
-            # Update position or remove if no lots remain
-            if current_lots:
-                positions[symbol]["lots"] = current_lots  # Reassign modified lots
-                update_position(positions[symbol], trade.price)
+            if end_date:
+                search = TavilySearchResults(max_results=3, kwargs={"end_date": end_date})
             else:
-                del positions[symbol]  # No lots left, remove position
+                search = TavilySearchResults(max_results=3)
 
-        elif trade.action == "BUY":
-            trade_cost = int(trade.shares) * trade.price
-            assert cash >= trade_cost, "Cash must be greater than or equal to trade cost"
-
-            trades_recommended += 1
-            logger.info(f"  {trade.action} {symbol}: {trade.shares} shares at {trade.price:.2f}")
-
-            cash -= trade_cost
-
-            # Create new lot
-            new_lot = Lot(date=today, shares=int(trade.shares), price_per_share=trade.price)
-
-            if symbol not in positions:
-                positions[symbol] = {
-                    "lots": [],
+            results = search.invoke(query)
+            return json.dumps({"success": True, "query": query, "end_date": end_date, "results": results}, indent=2)
+        except Exception as e:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": str(e),
+                    "message": "Web search not available",
                 }
+            )
 
-            positions[symbol]["lots"].append(new_lot)
-            update_position(positions[symbol], trade.price)
-
-    if trades_recommended > 0:
-        logger.info(f"✅ {trades_recommended} trades recommended and simulated")
-        # Create portfolio with just cash and positions
-        new_portfolio["cash"] = cash
-        new_portfolio["positions"] = positions
-        return new_portfolio
-
-    logger.info("ℹ️ No valid trades to execute")
-    return None
+    return search_web
 
 
-def load_portfolio() -> dict:
-    """Load portfolio from JSON file and convert lot dicts to Lot objects."""
-    portfolio_file = config.PORTFOLIO_FILE
-    with open(portfolio_file, "r") as f:
-        portfolio = json.load(f)
+def create_analyze_stock_trends_tool(cfg: config.Config):
+    """Factory function to create analyze_stock_trends tool with config context."""
 
-    # Convert lot dictionaries to Lot objects for positions
-    for symbol, position in portfolio.get("positions", {}).items():
-        position["lots"] = [Lot(**lot_dict) for lot_dict in position.get("lots", [])]
+    @tool
+    def analyze_stock_trends(symbol: str, days: int = 14) -> str:
+        """Analyze stock score trends, volatility, and sustained patterns for a specific stock.
 
-    # Convert closed_lots dictionaries to Lot objects
-    closed_lots = portfolio.get("closed_lots", {})
-    for symbol, lots in closed_lots.items():
-        closed_lots[symbol] = [Lot(**lot_dict) for lot_dict in lots]
+        Args:
+            symbol: Stock ticker to analyze (e.g. 'AAPL', 'GOOGL')
+            days: Number of days to analyze (default 14)
+        """
+        try:
+            memory_db = MemoryDatabase(cfg)
+            analysis = memory_db.analyze_stock_trends(symbol, days)
+            return json.dumps(analysis, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e), "symbol": symbol})
 
-    # Initialize closed_lots if not present
-    if "closed_lots" not in portfolio:
-        portfolio["closed_lots"] = {}
-
-    return portfolio
+    return analyze_stock_trends
 
 
-def save_portfolio(portfolio: dict):
-    """Save portfolio to JSON file and update history snapshot."""
-    # Convert Lot objects to dictionaries for JSON serialization
-    portfolio_for_json = copy.deepcopy(portfolio)
-    for symbol, position in portfolio_for_json.get("positions", {}).items():
-        position["lots"] = [asdict(lot) for lot in position.get("lots", [])]
+def create_compare_portfolio_performance_tool(cfg: config.Config):
+    """Factory function to create compare_portfolio_performance tool with config context."""
 
-    # Convert closed_lots Lot objects to dictionaries
-    closed_lots = portfolio_for_json.get("closed_lots", {})
-    for symbol, lots in closed_lots.items():
-        closed_lots[symbol] = [asdict(lot) for lot in lots]
+    @tool
+    def compare_portfolio_performance(days: int = 7) -> str:
+        """Compare performance metrics across all current portfolio stocks.
 
-    # Save to JSON file
-    portfolio_file = config.PORTFOLIO_FILE
-    with open(portfolio_file, "w") as f:
-        json.dump(portfolio_for_json, f, indent=2)
+        Args:
+            days: Number of days to analyze (default 7)
+        """
+        try:
+            memory_db = MemoryDatabase(cfg)
+            comparison = memory_db.compare_portfolio_performance(days)
+            return json.dumps(comparison, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
-    # Save snapshot to database for historical tracking
-    portfolio_db = PortfolioDatabase()
-    snapshot_date = portfolio.get("prices_as_of", datetime.now().strftime("%Y-%m-%d"))
-    portfolio_db.save_portfolio_snapshot(
-        date=snapshot_date,
-        cash=portfolio.get("cash", 0),
-        positions_value=portfolio.get("positions_value", 0),
-        total_value=portfolio.get("total_value", 0),
-        position_count=len(portfolio.get("positions", {})),
-    )
+    return compare_portfolio_performance
+
+
+def create_find_replacement_opportunities_tool(cfg: config.Config):
+    """Factory function to create find_replacement_opportunities tool with config context."""
+
+    @tool
+    def find_replacement_opportunities(min_gap: float = 5.0, days: int = 7) -> str:
+        """Find holdings that have clearly better alternatives available for strategic replacement.
+
+        Args:
+            min_gap: Minimum performance gap vs best alternative (default 5.0)
+            days: Number of days to analyze (default 7)
+        """
+        try:
+            memory_db = MemoryDatabase(cfg)
+            opportunities = memory_db.find_replacement_opportunities(min_gap, days)
+            return json.dumps(opportunities, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    return find_replacement_opportunities
+
+
+def create_find_stocks_to_sell_tool(cfg: config.Config):
+    """Factory function to create find_stocks_to_sell tool with config context."""
+
+    @tool
+    def find_stocks_to_sell(days: int = 7, min_score_threshold: float = 60.0) -> str:
+        """Find holdings that should be sold due to poor fundamental performance.
+
+        Args:
+            days: Number of days to analyze (default 7)
+            min_score_threshold: Minimum score threshold below which stocks are candidates for selling (default 60.0)
+        """
+        try:
+            memory_db = MemoryDatabase(cfg)
+            sell_candidates = memory_db.find_stocks_to_sell(days, min_score_threshold)
+            return json.dumps(sell_candidates, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    return find_stocks_to_sell
+
+
+def create_find_stocks_to_buy_tool(cfg: config.Config):
+    """Factory function to create find_stocks_to_buy tool with config context."""
+
+    @tool
+    def find_stocks_to_buy(days: int = 7, min_score_threshold: float = 75.0, top_n: int = 10) -> str:
+        """Find best available stocks (non-holdings) when cash is available.
+
+        Args:
+            days: Number of days to analyze (default 7)
+            min_score_threshold: Minimum score threshold for buy candidates (default 75.0)
+            top_n: Maximum number of buy candidates to return (default 10)
+        """
+        try:
+            memory_db = MemoryDatabase(cfg)
+            buy_candidates = memory_db.find_stocks_to_buy(days, min_score_threshold, top_n)
+            return json.dumps(buy_candidates, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    return find_stocks_to_buy
+
+
+def create_get_confidence_metrics_tool(cfg: config.Config):
+    """Factory function to create get_confidence_metrics tool with config context."""
+
+    @tool
+    def get_confidence_metrics(symbol: str = None) -> str:
+        """Get comprehensive confidence metrics for trading decisions.
+
+        Args:
+            symbol: Optional stock ticker to focus on, or None for overall metrics
+        """
+        try:
+            memory_db = MemoryDatabase(cfg)
+            metrics = memory_db.get_confidence_metrics(symbol)
+            return json.dumps(metrics, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e), "symbol": symbol})
+
+    return get_confidence_metrics
 
 
 # Define the agent nodes
 def initialize_agent_node(state: TradingState, cfg: config.Config) -> TradingState:
     """Initialize agent with portfolio and system message."""
-    portfolio_file = config.PORTFOLIO_FILE
-    assert os.path.exists(portfolio_file), f"Portfolio file not found: {portfolio_file}"
+    assert os.path.exists(cfg.portfolio_file), f"Portfolio file not found: {cfg.portfolio_file}"
     # Load portfolio data with Lot objects
-    portfolio = load_portfolio()
+    portfolio = Portfolio.load(cfg)
 
-    state["portfolio_cash"] = portfolio.get("cash", cfg.default_cash)
-    state["portfolio_positions"] = portfolio.get("positions", {})
+    state["portfolio_cash"] = portfolio.cash
+    state["portfolio_positions"] = portfolio.positions
     state["tool_call_count"] = 0
 
     # Add system message about portfolio and constraints
@@ -698,10 +506,19 @@ def main(cfg: config.Config = None):
     # Always use TradingAnalysis (trade_recommendations will be empty in scores-only mode)
     structured_llm = llm.with_structured_output(TradingAnalysis)
 
-    # Tool setup
+    # Tool setup - create all tools with config context
+    run_sql = create_run_sql_tool(cfg)
+    search_web = create_search_web_tool(cfg)
+    analyze_stock_trends = create_analyze_stock_trends_tool(cfg)
+    compare_portfolio_performance = create_compare_portfolio_performance_tool(cfg)
+    find_replacement_opportunities = create_find_replacement_opportunities_tool(cfg)
+    find_stocks_to_sell = create_find_stocks_to_sell_tool(cfg)
+    find_stocks_to_buy = create_find_stocks_to_buy_tool(cfg)
+    get_confidence_metrics = create_get_confidence_metrics_tool(cfg)
+
     tools = [
         run_sql,
-        search_market_news,
+        search_web,
         analyze_stock_trends,
         compare_portfolio_performance,
         find_replacement_opportunities,
@@ -750,22 +567,37 @@ def main(cfg: config.Config = None):
     )
 
     # Print initial portfolio
-    portfolio = load_portfolio()
-    logger.info(print_portfolio(portfolio, "Initial Portfolio"))
+    portfolio = Portfolio.load(cfg)
+    logger.info(portfolio.print("Initial Portfolio"))
 
     final_state = None
 
-    # Run the graph
-    for step in app.stream(initial_state, config={"recursion_limit": 50}):
-        for node_name, state in step.items():
-            final_state = state  # Keep track of final state
-            if node_name != "tools":  # Don't print tool outputs directly
-                logger.info(f"\n--- {node_name.upper()} ---")
-                if state["messages"]:
-                    last_msg = state["messages"][-1]
-                    logger.debug(last_msg.content)
+    # Set up timeout handler
+    def timeout_handler(_signum, _frame):
+        raise TimeoutError("LangGraph execution exceeded timeout")
 
-    logger.info("\n✅ Trading session completed successfully!")
+    # Set alarm for 30 minutes (1800 seconds)
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(1800)
+
+    try:
+        # Run the graph
+        for step in app.stream(initial_state, config={"recursion_limit": 50}):
+            for node_name, state in step.items():
+                final_state = state  # Keep track of final state
+                if node_name != "tools":  # Don't print tool outputs directly
+                    logger.info(f"\n--- {node_name.upper()} ---")
+                    if state["messages"]:
+                        last_msg = state["messages"][-1]
+                        logger.debug(last_msg.content)
+
+        logger.info("\n✅ Trading session completed successfully!")
+    except TimeoutError:
+        logger.error("❌ LangGraph execution timed out after 30 minutes")
+        raise
+    finally:
+        # Cancel the alarm
+        signal.alarm(0)
 
     # Return structured output directly
     assert final_state, "Final state must exist"
@@ -774,25 +606,25 @@ def main(cfg: config.Config = None):
     logger.info(print_analysis(trading_analysis))
 
     # Log final portfolio comparison
-    logger.info(print_portfolio(portfolio, "Current Portfolio"))
+    logger.info(portfolio.print("Current Portfolio"))
 
     # Only log "after" portfolio if there are actual trade recommendations
     # there are always trade recommendations
     assert trading_analysis.trade_recommendations, "Trade recommendations must be present in final state"
 
     # Apply trades and show resulting portfolio
-    final_portfolio = apply_trades_to_portfolio(portfolio, trading_analysis.trade_recommendations)
+    final_portfolio = portfolio.apply_trades(trading_analysis.trade_recommendations)
     if final_portfolio:
-        logger.info(print_portfolio(final_portfolio, "Portfolio After Trades"))
+        logger.info(final_portfolio.print("Portfolio After Trades"))
         if cfg.execute_trades:
-            save_portfolio(final_portfolio)
+            final_portfolio.save()
         else:
             logger.info("📋 Trade execution disabled - portfolio file not updated")
 
-    # Save scores to memory
-    memory_db = MemoryDatabase()
-    today = datetime.now().strftime("%Y-%m-%d")
-    memory_db.update_memory(today, trading_analysis.current_holdings_scores, trading_analysis.top_alternatives)
+    # Save scores to memory (use same date as portfolio snapshot)
+    memory_db = MemoryDatabase(cfg)
+    memory_date = portfolio.prices_as_of if portfolio.prices_as_of else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    memory_db.update_memory(memory_date, trading_analysis.current_holdings_scores, trading_analysis.top_alternatives)
 
     return trading_analysis, final_portfolio
 

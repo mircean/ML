@@ -7,6 +7,8 @@ __pycache__/
 # Generated data files
 *.db
 portfolio.json
+portfolio_eval.json
+simulation_results.json
 log.txt
 
 # Jupyter Notebook

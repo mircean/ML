@@ -1,10 +1,11 @@
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import agent
 import config
 import markdown
+import portfolio
 import stock_history_sync
 from dotenv import load_dotenv
 from outlook_auth import OutlookAuthenticator
@@ -13,25 +14,26 @@ from outlook_client import OutlookClient
 logger = logging.getLogger(__name__)
 
 
-def generate_trading_email(trading_analysis, portfolio, final_portfolio):
+def generate_trading_email(trading_analysis, start_portfolio, final_portfolio):
     """
     Generate a formatted markdown email body for trading analysis.
 
     Args:
         trading_analysis: TradingAnalysis object with recommendations and scores
-        portfolio: Portfolio dictionary with cash and positions
+        start_portfolio: Portfolio object
+        final_portfolio: Portfolio object or None
 
     Returns:
         str: Formatted markdown email body
     """
-    # Create formatted markdown email body using existing print functions with markdown enabled
-    body = agent.print_portfolio(portfolio, "Current Portfolio", use_markdown=True)
+    # Create formatted markdown email body using Portfolio.print() with markdown enabled
+    body = start_portfolio.print("Start Portfolio", use_markdown=True)
     body += "\n\n"
     body += agent.print_analysis(trading_analysis, use_markdown=True)
 
     body += "\n\n"
     if final_portfolio:
-        body += agent.print_portfolio(final_portfolio, "Final Portfolio", use_markdown=True)
+        body += final_portfolio.print("Final Portfolio", use_markdown=True)
     else:
         body += "No trades were executed."
 
@@ -84,22 +86,19 @@ def main():
         stock_history_sync.main()
         logger.info("Data sync completed successfully")
 
-    # Load portfolio data from database
-    portfolio = agent.load_portfolio()
+    # Step 2: Update portfolio values with latest prices and save benchmark snapshot
+    logger.info("Updating portfolio with latest stock prices...")
+    start_portfolio = portfolio.Portfolio.load(cfg)
+    start_portfolio.update_stock_prices()
 
-    # Step 2: Run trading agent
+    # Step 3: Run trading agent
     logger.info("Running trading agent...")
     trading_analysis, final_portfolio = agent.main(cfg)
     logger.info("Trading agent completed successfully")
 
-    # notifier = EmailNotifier()
-
-    subject = f"Daily Trading Report - {datetime.now().strftime('%Y-%m-%d')}"
-
-    # Generate formatted email body
-    body = generate_trading_email(trading_analysis, portfolio, final_portfolio)
-
-    # Send email
+    # Step 4: Send email
+    subject = f"Daily Trading Report - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+    body = generate_trading_email(trading_analysis, start_portfolio, final_portfolio)
     send_email(subject, body)
 
     logger.info("Daily trading report sent to email")

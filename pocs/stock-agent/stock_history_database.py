@@ -1,7 +1,7 @@
 import logging
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 
 import config
@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 class StockHistoryDatabase:
     """Database manager for stock data storage and retrieval"""
 
-    def __init__(self):
-        self.db_path = config.STOCK_HISTORY_DATABASE_PATH
+    def __init__(self, cfg: config.Config):
+        self.db_path = cfg.stock_history_db_name
         self.init_database()
 
     def init_database(self):
@@ -69,16 +69,17 @@ class StockHistoryDatabase:
                 )
             conn.commit()
 
-    def insert_fundamentals(self, symbol: str, fundamentals: Dict, date: str = None):
-        """Insert fundamental data for a stock"""
-        if date is None:
-            date = datetime.now().strftime("%Y-%m-%d")
+    def insert_fundamentals(self, symbol: str, fundamentals: Dict):
+        """Insert fundamental data for a stock (writes to history table, view shows latest)"""
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+
+            # Insert into history table (stock_fundamentals view will show latest automatically)
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO stock_fundamentals
+                INSERT OR REPLACE INTO stock_fundamentals_history
                 (symbol, date, market_cap, enterprise_value, pe_ratio, peg_ratio, price_to_book,
                  price_to_sales, ev_to_revenue, ev_to_ebitda, debt_to_equity, return_on_equity,
                  return_on_assets, gross_margin, operating_margin, profit_margin, beta,
@@ -151,16 +152,17 @@ class StockHistoryDatabase:
 
             conn.commit()
 
-    def insert_statistics(self, symbol: str, stats: Dict, date: str = None):
-        """Insert stock statistics"""
-        if date is None:
-            date = datetime.now().strftime("%Y-%m-%d")
+    def insert_statistics(self, symbol: str, stats: Dict):
+        """Insert stock statistics (writes to history table, view shows latest)"""
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+
+            # Insert into history table (stock_statistics view will show latest automatically)
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO stock_statistics
+                INSERT OR REPLACE INTO stock_statistics_history
                 (symbol, date, fifty_two_week_high, fifty_two_week_low, fifty_day_average,
                  two_hundred_day_average, avg_volume_10day, avg_volume_3month, shares_short,
                  short_ratio, short_percent_float)
@@ -216,7 +218,6 @@ class StockHistoryDatabase:
             fund_query = f"""
                 SELECT * FROM stock_fundamentals 
                 WHERE symbol = ? {date_condition}
-                ORDER BY date DESC
             """
             fundamentals_df = pd.read_sql_query(fund_query, conn, params=params)
 
@@ -232,7 +233,6 @@ class StockHistoryDatabase:
             stats_query = f"""
                 SELECT * FROM stock_statistics 
                 WHERE symbol = ? {date_condition}
-                ORDER BY date DESC
             """
             stats_df = pd.read_sql_query(stats_query, conn, params=params)
 
@@ -243,30 +243,63 @@ class StockHistoryDatabase:
                 "statistics": stats_df,
             }
 
-    def truncate_all_tables(self):
-        """Remove all data from all tables"""
+    def cleanup_old_data(self, years: int = 3):
+        """
+        Remove data older than specified years from stock_prices and table.
+        No cleanup for stock_actions table - this is always from the begining of time
+
+        Args:
+            years: Number of years of history to keep (default: 3)
+        """
+        from datetime import datetime, timedelta, timezone
+
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=years * 365)).strftime("%Y-%m-%d")
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            tables = [
-                "stock_prices",
-                "stock_fundamentals",
-                "stock_actions",
-                "stock_statistics",
-                "stocks",
-            ]
-
-            for table in tables:
-                cursor.execute(f"DELETE FROM {table}")
-                deleted = cursor.rowcount
-                logger.info(f"Truncated {deleted} records from {table}")
+            # Clean up old price data
+            cursor.execute("DELETE FROM stock_prices WHERE date < ?", (cutoff_date,))
+            deleted_prices = cursor.rowcount
+            logger.info(f"Deleted {deleted_prices} old price records before {cutoff_date}")
 
             conn.commit()
-            logger.info("All tables truncated")
 
-            # Vacuum to reclaim space
-            cursor.execute("VACUUM")
-            logger.info("Database vacuumed")
+            # no vacuum, database is small enough
+
+    def remove_data_after_date(self, date: str):
+        """
+        Remove all data newer than specified date (useful for backtesting setup).
+
+        Args:
+            date: Date in YYYY-MM-DD format. All data after this date will be deleted.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            # Remove price data after date
+            cursor.execute("DELETE FROM stock_prices WHERE date > ?", (date,))
+            deleted_prices = cursor.rowcount
+
+            # Remove fundamentals history after date
+            cursor.execute("DELETE FROM stock_fundamentals_history WHERE date > ?", (date,))
+            deleted_fundamentals = cursor.rowcount
+
+            # Remove statistics history after date
+            cursor.execute("DELETE FROM stock_statistics_history WHERE date > ?", (date,))
+            deleted_statistics = cursor.rowcount
+
+            # Remove actions after date
+            cursor.execute("DELETE FROM stock_actions WHERE date > ?", (date,))
+            deleted_actions = cursor.rowcount
+
+            conn.commit()
+
+            logger.info(f"Removed data after {date}:")
+            logger.info(f"  - {deleted_prices} price records")
+            logger.info(f"  - {deleted_fundamentals} fundamental records")
+            logger.info(f"  - {deleted_statistics} statistics records")
+            logger.info(f"  - {deleted_actions} action records")
 
     def get_database_stats(self) -> Dict:
         """Get database statistics"""

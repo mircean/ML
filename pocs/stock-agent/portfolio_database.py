@@ -1,40 +1,13 @@
 """
 Portfolio Database Module
-
 Manages historical portfolio performance tracking.
-Current portfolio state is stored in portfolio.json with the following structure:
-
-{
-    "cash": 1000.0,
-    "positions": {
-        "SYMBOL": {
-            "lots": [{"date": "2025-10-09", "shares": 10, "price_per_share": 150.0}],
-            "shares": 10,
-            "current_price": 155.0,
-            "current_value": 1550.0
-        }
-    },
-    "closed_lots": {
-        "SYMBOL": [
-            {
-                "date": "2025-10-09",
-                "shares": 5,
-                "price_per_share": 150.0,
-                "sale_date": "2025-10-15",
-                "sale_price": 160.0
-            }
-        ]
-    },
-    "total_value": 2550.0,
-    "positions_value": 1550.0,
-    "prices_as_of": "2025-10-24"
-}
 """
 
 import logging
 import os
 from typing import Dict, List
 
+import config
 import psycopg2
 
 logger = logging.getLogger(__name__)
@@ -43,12 +16,12 @@ logger = logging.getLogger(__name__)
 class PortfolioDatabase:
     """Database manager for historical portfolio performance tracking"""
 
-    def __init__(self):
+    def __init__(self, cfg: config.Config):
         # PostgreSQL connection parameters
         self.db_host = os.getenv("PORTFOLIO_DB_HOST", "localhost")
         self.db_user = os.getenv("PORTFOLIO_DB_USER", "Mircea")
         self.db_password = os.getenv("PORTFOLIO_DB_PASSWORD", "")  # No password needed
-        self.db_name = "portfolio"
+        self.db_name = cfg.portfolio_db_name
         self.init_database()
 
     def init_database(self):
@@ -89,7 +62,7 @@ class PortfolioDatabase:
             conn.autocommit = True
 
             with conn.cursor() as cursor:
-                cursor.execute("SELECT 1 FROM pg_database WHERE datname='portfolio'")
+                cursor.execute(f"SELECT 1 FROM pg_database WHERE datname='{self.db_name}'")
                 if not cursor.fetchone():
                     cursor.execute(f"CREATE DATABASE {self.db_name}")
                     logger.info(f"Created PostgreSQL database: {self.db_name}")
@@ -105,6 +78,38 @@ class PortfolioDatabase:
         if self.db_password:
             conn_params["password"] = self.db_password
         return psycopg2.connect(**conn_params)
+
+    @staticmethod
+    def drop_database(db_name: str):
+        """Drop PostgreSQL database if it exists"""
+        try:
+            db_host = os.getenv("PORTFOLIO_DB_HOST", "localhost")
+            db_user = os.getenv("PORTFOLIO_DB_USER", "Mircea")
+            db_password = os.getenv("PORTFOLIO_DB_PASSWORD", "")
+
+            conn_params = {"host": db_host, "user": db_user, "database": "postgres"}
+            if db_password:
+                conn_params["password"] = db_password
+
+            conn = psycopg2.connect(**conn_params)
+            conn.autocommit = True
+
+            with conn.cursor() as cursor:
+                # Terminate existing connections to the database
+                cursor.execute(f"""
+                    SELECT pg_terminate_backend(pg_stat_activity.pid)
+                    FROM pg_stat_activity
+                    WHERE pg_stat_activity.datname = '{db_name}'
+                    AND pid <> pg_backend_pid()
+                """)
+
+                # Drop database if it exists
+                cursor.execute(f"DROP DATABASE IF EXISTS {db_name}")
+                logger.info(f"Dropped PostgreSQL database: {db_name}")
+
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Could not drop database {db_name}: {e}")
 
     def save_portfolio_snapshot(self, date: str, cash: float, positions_value: float, total_value: float, position_count: int):
         """Save daily portfolio snapshot for historical tracking"""

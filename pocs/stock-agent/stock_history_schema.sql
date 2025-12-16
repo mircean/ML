@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS stock_prices (
     FOREIGN KEY (symbol) REFERENCES stocks (symbol)
 );
 
--- Stock fundamentals and ratios
-CREATE TABLE IF NOT EXISTS stock_fundamentals (
+-- Stock fundamentals history (historical with dates)
+CREATE TABLE IF NOT EXISTS stock_fundamentals_history (
     symbol TEXT,
     date DATE,
     market_cap REAL,
@@ -51,6 +51,15 @@ CREATE TABLE IF NOT EXISTS stock_fundamentals (
     FOREIGN KEY (symbol) REFERENCES stocks (symbol)
 );
 
+-- Stock fundamentals view (latest snapshot only, for agent queries)
+CREATE VIEW IF NOT EXISTS stock_fundamentals AS
+SELECT symbol, market_cap, enterprise_value, pe_ratio, peg_ratio, price_to_book,
+       price_to_sales, ev_to_revenue, ev_to_ebitda, debt_to_equity, return_on_equity,
+       return_on_assets, gross_margin, operating_margin, profit_margin, beta,
+       dividend_yield, payout_ratio, shares_outstanding, float_shares
+FROM stock_fundamentals_history
+WHERE date = (SELECT MAX(date) FROM stock_fundamentals_history);
+
 -- Stock splits and dividends
 CREATE TABLE IF NOT EXISTS stock_actions (
     symbol TEXT,
@@ -62,8 +71,8 @@ CREATE TABLE IF NOT EXISTS stock_actions (
     FOREIGN KEY (symbol) REFERENCES stocks (symbol)
 );
 
--- Stock statistics and highs/lows
-CREATE TABLE IF NOT EXISTS stock_statistics (
+-- Stock statistics history (historical with dates)
+CREATE TABLE IF NOT EXISTS stock_statistics_history (
     symbol TEXT,
     date DATE,
     fifty_two_week_high REAL,
@@ -79,8 +88,16 @@ CREATE TABLE IF NOT EXISTS stock_statistics (
     FOREIGN KEY (symbol) REFERENCES stocks (symbol)
 );
 
+-- Stock statistics view (latest snapshot only, for agent queries)
+CREATE VIEW IF NOT EXISTS stock_statistics AS
+SELECT symbol, fifty_two_week_high, fifty_two_week_low, fifty_day_average,
+       two_hundred_day_average, avg_volume_10day, avg_volume_3month, shares_short,
+       short_ratio, short_percent_float
+FROM stock_statistics_history
+WHERE date = (SELECT MAX(date) FROM stock_statistics_history);
+
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_stock_prices_symbol_date ON stock_prices(symbol, date);
-CREATE INDEX IF NOT EXISTS idx_stock_fundamentals_symbol_date ON stock_fundamentals(symbol, date);
+CREATE INDEX IF NOT EXISTS idx_stock_fundamentals_history_symbol_date ON stock_fundamentals_history(symbol, date);
 CREATE INDEX IF NOT EXISTS idx_stock_actions_symbol_date ON stock_actions(symbol, date);
-CREATE INDEX IF NOT EXISTS idx_stock_statistics_symbol_date ON stock_statistics(symbol, date);
+CREATE INDEX IF NOT EXISTS idx_stock_statistics_history_symbol_date ON stock_statistics_history(symbol, date);

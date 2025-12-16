@@ -4,11 +4,12 @@ Unit test for email generation and sending
 """
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 import config
 from agent import StockScore, TradeRecommendation, TradingAnalysis
 from automation import generate_trading_email, send_email
+from portfolio import Portfolio, Lot
 from dotenv import load_dotenv
 
 
@@ -40,14 +41,32 @@ class TestEmailGeneration(unittest.TestCase):
             ],
         )
 
-        self.portfolio = {
-            "cash": 2750.50,
-            "positions": {
-                "MSFT": {"shares": 25, "current_price": 420.75, "current_value": 10518.75},
-                "NVDA": {"shares": 15, "current_price": 890.25, "current_value": 13353.75},
-                "GOOGL": {"shares": 8, "current_price": 2850.00, "current_value": 22800.00},
+        cfg = config.Config()
+        self.portfolio = Portfolio(cfg)
+        self.portfolio.cash = 2750.50
+        self.portfolio.positions = {
+            "MSFT": {
+                "lots": [Lot(date="2025-01-01", shares=25, price_per_share=400.0)],
+                "shares": 25,
+                "current_price": 420.75,
+                "current_value": 10518.75,
+            },
+            "NVDA": {
+                "lots": [Lot(date="2025-01-01", shares=15, price_per_share=800.0)],
+                "shares": 15,
+                "current_price": 890.25,
+                "current_value": 13353.75,
+            },
+            "GOOGL": {
+                "lots": [Lot(date="2025-01-01", shares=8, price_per_share=2800.0)],
+                "shares": 8,
+                "current_price": 2850.00,
+                "current_value": 22800.00,
             },
         }
+        self.portfolio.closed_lots = {}
+        self.portfolio.positions_value = 10518.75 + 13353.75 + 22800.00
+        self.portfolio.total_value = self.portfolio.cash + self.portfolio.positions_value
 
     def test_email_generation_works(self):
         """Test that email generation doesn't crash and produces output"""
@@ -67,7 +86,7 @@ class TestEmailGeneration(unittest.TestCase):
     def test_send_email(self):
         """Send a test trading email"""
         # Generate email
-        subject = f"TEST Trading Report - {datetime.now().strftime('%Y-%m-%d')}"
+        subject = f"TEST Trading Report - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
         body = generate_trading_email(self.trading_analysis, self.portfolio, None)
 
         # Send email using the shared method

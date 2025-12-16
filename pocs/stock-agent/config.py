@@ -7,10 +7,16 @@ import logging
 from dataclasses import dataclass, fields
 from typing import Final
 
-# Database and file constants
-STOCK_HISTORY_DATABASE_PATH: Final[str] = "stock_history.db"
-MEMORY_DATABASE_PATH: Final[str] = "memory.db"
 PORTFOLIO_FILE: Final[str] = "portfolio.json"
+PORTFOLIO_DB_NAME: Final[str] = "portfolio"
+STOCK_HISTORY_DB_NAME: Final[str] = "stock_history.db"
+MEMORY_DB_NAME: Final[str] = "memory.db"
+
+# Evaluation/backtesting database and file constants
+EVAL_PORTFOLIO_FILE: Final[str] = "portfolio_eval.json"
+EVAL_PORTFOLIO_DB_NAME: Final[str] = "portfolio_eval"
+EVAL_STOCK_HISTORY_DB_NAME: Final[str] = "stock_history_eval.db"
+EVAL_MEMORY_DB_NAME: Final[str] = "memory_eval.db"
 
 
 @dataclass
@@ -27,10 +33,18 @@ class Config:
     execute_trades: bool = True  # Whether to actually execute trades and update portfolio file
     skip_data_download: bool = False  # Skip data synchronization step
 
+    # Evaluation parameters
+    as_of_date: str = None  # Date to run agent for (YYYY-MM-DD), used for memory tracking
+
     # Model settings
     llm_model: str = "gpt-5"
     llm_temperature: float = 0.0  # Maximum determinism
     llm_seed: int = 12345  # Fixed seed for reproducible results
+
+    portfolio_file: str = PORTFOLIO_FILE
+    portfolio_db_name: str = PORTFOLIO_DB_NAME
+    stock_history_db_name: str = STOCK_HISTORY_DB_NAME
+    memory_db_name: str = MEMORY_DB_NAME
 
 
 # Logging
