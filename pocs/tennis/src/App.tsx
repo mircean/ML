@@ -8,56 +8,109 @@ import {
   undoLastPoint,
   resetMatch,
 } from './tennis'
-import type { MatchState, PointMode } from './tennis'
+import type { MatchState, PointMode, ScoringSystem } from './tennis'
 
 function App() {
   const [state, setState] = useState<MatchState>(createInitialMatchState())
-  
+  const [selectedSystem, setSelectedSystem] = useState<ScoringSystem>('normal')
+
+  const handleSystemChange = (system: ScoringSystem) => {
+    setSelectedSystem(system)
+    setState(createInitialMatchState(system))
+  }
 
   const scoreDisplay = useMemo(() => {
+    if (state.scoringSystem === 'simple') {
+      const { pointsA, pointsB, gamesA, gamesB, setsA, setsB } = state.simpleGame
+      return {
+        sets: `${setsA} - ${setsB}`,
+        games: `${gamesA} - ${gamesB}`,
+        points: `${pointsA} : ${pointsB}`,
+      }
+    }
     const { game, gamesA, gamesB } = state.currentSet
+    const setsA = state.sets.filter(s => s.gamesA > s.gamesB).length
+    const setsB = state.sets.filter(s => s.gamesB > s.gamesA).length
     if (game.type === 'normal') {
       const { displayA, displayB } = formatNormalGamePoints(
         game.pointsA,
         game.pointsB,
       )
       return {
-        set: `${gamesA} - ${gamesB}`,
-        game: `${displayA} : ${displayB}`,
-        subtitle: 'Game',
+        sets: `${setsA} - ${setsB}`,
+        games: `${gamesA} - ${gamesB}`,
+        points: `${displayA} : ${displayB}`,
       }
     }
     return {
-      set: `${gamesA} - ${gamesB}`,
-      game: `${game.pointsA} : ${game.pointsB}`,
-      subtitle: 'Tie-break',
+      sets: `${setsA} - ${setsB}`,
+      games: `${gamesA} - ${gamesB}`,
+      points: `${game.pointsA} : ${game.pointsB}`,
     }
   }, [state])
 
   const handleAction = (player: 'A' | 'B', action: PointMode) => {
     if (state.isEnded) return
-    const winner: 'A' | 'B' =
-      action === 'ace' || action === 'winner' || action === 'other-winner'
-        ? player
-        : player === 'A'
-        ? 'B'
-        : 'A'
-    setState((s) => addPoint(s, winner, action))
+    setState((s) => addPoint(s, player, action))
   }
 
   return (
     <div className="container">
       <h1>Tennis Match Stats</h1>
 
+      <div className="scoring-system-selector">
+        <label>
+          <input
+            type="radio"
+            name="scoringSystem"
+            checked={selectedSystem === 'normal'}
+            onChange={() => handleSystemChange('normal')}
+          />
+          Normal Tennis
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="scoringSystem"
+            checked={selectedSystem === 'simple'}
+            onChange={() => handleSystemChange('simple')}
+          />
+          Simple (A starts -2 each game, first to 5 wins game, first to 4 games wins)
+        </label>
+      </div>
+
       <div className="scoreboard">
-        <div className="score-row">
-          <div className="score-label">Set</div>
-          <div className="score-value">{scoreDisplay.set}</div>
-        </div>
-        <div className="score-row">
-          <div className="score-label">{scoreDisplay.subtitle}</div>
-          <div className="score-value game">{scoreDisplay.game}</div>
-        </div>
+        {state.scoringSystem === 'simple' ? (
+          <>
+            <div className="score-row">
+              <div className="score-label">Sets</div>
+              <div className="score-value">{scoreDisplay.sets}</div>
+            </div>
+            <div className="score-row">
+              <div className="score-label">Games</div>
+              <div className="score-value">{scoreDisplay.games}</div>
+            </div>
+            <div className="score-row">
+              <div className="score-label">Current Game</div>
+              <div className="score-value game">{scoreDisplay.points}</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="score-row">
+              <div className="score-label">Current Game</div>
+              <div className="score-value game">{scoreDisplay.points}</div>
+            </div>
+            <div className="score-row">
+              <div className="score-label">Games</div>
+              <div className="score-value">{scoreDisplay.games}</div>
+            </div>
+            <div className="score-row">
+              <div className="score-label">Sets</div>
+              <div className="score-value">{scoreDisplay.sets}</div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="controls">
@@ -68,9 +121,9 @@ function App() {
               <button className="action-win" disabled={state.isEnded} onClick={() => handleAction('A', 'ace')}>Ace</button>
               <button className="action-win" disabled={state.isEnded} onClick={() => handleAction('A', 'winner')}>Winner</button>
               <button className="action-win" disabled={state.isEnded} onClick={() => handleAction('A', 'other-winner')}>Other winner</button>
-              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('A', 'double-fault')}>Double fault</button>
-              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('A', 'forced-error')}>Forced error</button>
-              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('A', 'unforced-error')}>Unforced error</button>
+              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('A', 'double-fault')}>Opp. double fault</button>
+              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('A', 'forced-error')}>Opp. forced error</button>
+              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('A', 'unforced-error')}>Opp. unforced error</button>
             </div>
           </div>
           <div className="player-section">
@@ -79,9 +132,9 @@ function App() {
               <button className="action-win" disabled={state.isEnded} onClick={() => handleAction('B', 'ace')}>Ace</button>
               <button className="action-win" disabled={state.isEnded} onClick={() => handleAction('B', 'winner')}>Winner</button>
               <button className="action-win" disabled={state.isEnded} onClick={() => handleAction('B', 'other-winner')}>Other winner</button>
-              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('B', 'double-fault')}>Double fault</button>
-              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('B', 'forced-error')}>Forced error</button>
-              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('B', 'unforced-error')}>Unforced error</button>
+              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('B', 'double-fault')}>Opp. double fault</button>
+              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('B', 'forced-error')}>Opp. forced error</button>
+              <button className="action-err" disabled={state.isEnded} onClick={() => handleAction('B', 'unforced-error')}>Opp. unforced error</button>
             </div>
           </div>
         </div>
@@ -90,7 +143,7 @@ function App() {
             End Match
           </button>
           <button onClick={() => setState((s) => undoLastPoint(s))} disabled={state.history.length === 0}>Undo</button>
-          <button onClick={() => setState(resetMatch())}>Reset</button>
+          <button onClick={() => setState(resetMatch(selectedSystem))}>Reset</button>
         </div>
       </div>
 

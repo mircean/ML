@@ -1,5 +1,7 @@
 export type PlayerId = "A" | "B";
 
+export type ScoringSystem = "normal" | "simple";
+
 export type PointMode =
   | "ace"
   | "winner"
@@ -51,22 +53,42 @@ export interface CurrentSetState {
   game: CurrentGame;
 }
 
+export interface SimpleGameState {
+  pointsA: number; // Player A starts at -2
+  pointsB: number; // Player B starts at 0
+  gamesA: number;  // Games won by A in current set
+  gamesB: number;  // Games won by B in current set
+  setsA: number;   // Sets won by A
+  setsB: number;   // Sets won by B
+}
+
 export interface MatchState {
-  sets: SetScore[]; // completed sets
-  currentSet: CurrentSetState;
+  scoringSystem: ScoringSystem;
+  sets: SetScore[]; // completed sets (only for normal scoring)
+  currentSet: CurrentSetState; // only for normal scoring
+  simpleGame: SimpleGameState; // only for simple scoring
   statsA: PlayerStats;
   statsB: PlayerStats;
   history: PointEvent[];
   isEnded: boolean;
 }
 
-export function createInitialMatchState(): MatchState {
+export function createInitialMatchState(scoringSystem: ScoringSystem = "normal"): MatchState {
   return {
+    scoringSystem,
     sets: [],
     currentSet: {
       gamesA: 0,
       gamesB: 0,
-      game: { type: "normal", pointsA: 0, pointsB: 0 },
+      game: { type: "normal", pointsA: -2, pointsB: 0 },
+    },
+    simpleGame: {
+      pointsA: -2,
+      pointsB: 0,
+      gamesA: 0,
+      gamesB: 0,
+      setsA: 0,
+      setsB: 0,
     },
     statsA: {
       aces: 0,
@@ -98,7 +120,8 @@ function incrementStats(stats: PlayerStats, mode: PointMode): PlayerStats {
 }
 
 function isSetInTieBreak(gamesA: number, gamesB: number): boolean {
-  return gamesA === 6 && gamesB === 6;
+  // No tiebreaks with first-to-4 sets
+  return false;
 }
 
 function hasNormalGameWinner(pointsA: number, pointsB: number): PlayerId | null {
@@ -122,13 +145,9 @@ function hasTieBreakWinner(pointsA: number, pointsB: number): PlayerId | null {
 }
 
 function hasSetWinner(gamesA: number, gamesB: number): PlayerId | null {
-  // Win set at 6 with a 2-game margin, or at 7 after a tie-break
-  if ((gamesA >= 6 || gamesB >= 6) && Math.abs(gamesA - gamesB) >= 2) {
-    return gamesA > gamesB ? "A" : "B";
-  }
-  if (gamesA === 7 || gamesB === 7) {
-    return gamesA > gamesB ? "A" : "B";
-  }
+  // First to 4 games wins the set, 4-3 is OK
+  if (gamesA >= 4) return "A";
+  if (gamesB >= 4) return "B";
   return null;
 }
 
@@ -136,16 +155,37 @@ export function formatNormalGamePoints(pointsA: number, pointsB: number): {
   displayA: string;
   displayB: string;
 } {
-  const mapping = ["0", "15", "30", "40"] as const;
+  // Player A starts at -2 (-30), mapping: -2→-30, -1→-15, 0→0, 1→15, 2→30, 3→40
+  const mappingA: Record<number, string> = {
+    [-2]: "-30", [-1]: "-15", 0: "0", 1: "15", 2: "30", 3: "40"
+  };
+  const mappingB = ["0", "15", "30", "40"] as const;
+
+  // Deuce and advantage handling (both at 3+ effective points, i.e., A at 3+, B at 3+)
   if (pointsA >= 3 && pointsB >= 3) {
     if (pointsA === pointsB) return { displayA: "40", displayB: "40" };
     if (pointsA === pointsB + 1) return { displayA: "Ad", displayB: "-" };
     if (pointsB === pointsA + 1) return { displayA: "-", displayB: "Ad" };
   }
-  return {
-    displayA: mapping[Math.min(pointsA, 3)],
-    displayB: mapping[Math.min(pointsB, 3)],
-  };
+
+  const displayA = pointsA >= 3 ? "40" : (mappingA[pointsA] ?? String(pointsA));
+  const displayB = mappingB[Math.min(pointsB, 3)];
+
+  return { displayA, displayB };
+}
+
+function hasSimpleGameWinner(pointsA: number, pointsB: number): PlayerId | null {
+  // First to 5 with diff of 2 wins the game
+  if (pointsA >= 5 && pointsA - pointsB >= 2) return "A";
+  if (pointsB >= 5 && pointsB - pointsA >= 2) return "B";
+  return null;
+}
+
+function hasSimpleSetWinner(gamesA: number, gamesB: number): PlayerId | null {
+  // First to 4 games wins the set
+  if (gamesA >= 4) return "A";
+  if (gamesB >= 4) return "B";
+  return null;
 }
 
 export function addPoint(
@@ -175,6 +215,61 @@ export function addPoint(
     else statsB = incrementStats(statsB, mode);
   }
 
+  // Simple scoring system
+  if (prev.scoringSystem === "simple") {
+    const pointsA = prev.simpleGame.pointsA + (winner === "A" ? 1 : 0);
+    const pointsB = prev.simpleGame.pointsB + (winner === "B" ? 1 : 0);
+    const gameWinner = hasSimpleGameWinner(pointsA, pointsB);
+
+    if (gameWinner) {
+      // Game won, update games count and reset points
+      const gamesA = prev.simpleGame.gamesA + (gameWinner === "A" ? 1 : 0);
+      const gamesB = prev.simpleGame.gamesB + (gameWinner === "B" ? 1 : 0);
+      const setWinner = hasSimpleSetWinner(gamesA, gamesB);
+
+      if (setWinner) {
+        // Set won, update sets count and reset games
+        return {
+          ...prev,
+          simpleGame: {
+            pointsA: -2,
+            pointsB: 0,
+            gamesA: 0,
+            gamesB: 0,
+            setsA: prev.simpleGame.setsA + (setWinner === "A" ? 1 : 0),
+            setsB: prev.simpleGame.setsB + (setWinner === "B" ? 1 : 0),
+          },
+          statsA,
+          statsB,
+          history,
+        };
+      }
+
+      return {
+        ...prev,
+        simpleGame: {
+          ...prev.simpleGame,
+          pointsA: -2,
+          pointsB: 0,
+          gamesA,
+          gamesB,
+        },
+        statsA,
+        statsB,
+        history,
+      };
+    }
+
+    return {
+      ...prev,
+      simpleGame: { ...prev.simpleGame, pointsA, pointsB },
+      statsA,
+      statsB,
+      history,
+    };
+  }
+
+  // Normal scoring system
   let { gamesA, gamesB, game } = prev.currentSet;
 
   if (game.type === "normal") {
@@ -190,7 +285,7 @@ export function addPoint(
       if (isSetInTieBreak(gamesA, gamesB)) {
         game = { type: "tiebreak", pointsA: 0, pointsB: 0 };
       } else {
-        game = { type: "normal", pointsA: 0, pointsB: 0 };
+        game = { type: "normal", pointsA: -2, pointsB: 0 };
       }
     } else {
       game = { type: "normal", pointsA, pointsB };
@@ -219,7 +314,7 @@ export function addPoint(
         currentSet: {
           gamesA: 0,
           gamesB: 0,
-          game: { type: "normal", pointsA: 0, pointsB: 0 },
+          game: { type: "normal", pointsA: -2, pointsB: 0 },
         },
         statsA,
         statsB,
@@ -240,7 +335,7 @@ export function addPoint(
       currentSet: {
         gamesA: 0,
         gamesB: 0,
-        game: { type: "normal", pointsA: 0, pointsB: 0 },
+        game: { type: "normal", pointsA: -2, pointsB: 0 },
       },
       statsA,
       statsB,
@@ -261,14 +356,14 @@ export function endMatch(prev: MatchState): MatchState {
   return { ...prev, isEnded: true };
 }
 
-export function resetMatch(): MatchState {
-  return createInitialMatchState();
+export function resetMatch(scoringSystem: ScoringSystem): MatchState {
+  return createInitialMatchState(scoringSystem);
 }
 
 export function undoLastPoint(prev: MatchState): MatchState {
   if (prev.history.length === 0) return prev;
   const newHistory = prev.history.slice(0, -1);
-  let rebuilt = createInitialMatchState();
+  let rebuilt = createInitialMatchState(prev.scoringSystem);
   for (const evt of newHistory) {
     rebuilt = addPoint(rebuilt, evt.winner, evt.mode);
   }

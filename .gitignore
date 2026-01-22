@@ -35,3 +35,9 @@
 pocs/rft/wandb/
 pocs/wandb/
 pocs/rft/Qwen2-0.5B-GRPO/
+pocs/polymarket/wandb/
+pocs/polymarket/__pycache__/
+pocs/polymarket/log.txt
+pocs/polymarket/tennis_xgboost_model.json
+pocs/polymarket/dataset.csv
+pocs/polymarket/models/*
