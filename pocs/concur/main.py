@@ -1,5 +1,5 @@
 """
-Main application for finding Concur expense reports with missing receipts.
+Main application for finding and attaching Concur expense receipts.
 """
 
 import datetime
@@ -161,6 +161,8 @@ def search(outlook_client, total, date, days_to_search=90):
 
 def main():
     """Main application entry point."""
+    cfg = config.parse_config()
+
     load_dotenv()
     config.setup_logging()
 
@@ -171,7 +173,7 @@ def main():
     client_secret = os.getenv("CONCUR_CLIENT_SECRET")
     assert client_id and client_secret, "Missing required environment variables: CONCUR_CLIENT_ID, CONCUR_CLIENT_SECRET"
     base_url = os.getenv("CONCUR_BASE_URL", "https://us2.api.concursolutions.com")
-    scope = os.getenv("CONCUR_SCOPE", "openid profile user.read identity.user.ids.read expense.report.read")
+    scope = os.getenv("CONCUR_SCOPE", "openid profile user.read identity.user.ids.read expense.report.read IMAGE EXPRPT")
 
     authenticator = ConcurAuthenticator(
         client_id=client_id,
@@ -224,7 +226,10 @@ def main():
                 if receipt_pdf:
                     logger.info("✅ Found matching receipt in Outlook!")
                     matched_count += 1
-                    # TODO: Upload receipt to Concur
+                    if cfg.dry_run:
+                        logger.info(f"[DRY RUN] Would upload receipt to expense entry {expense['ID']}")
+                    else:
+                        concur_client.upload_receipt_image(expense["ID"], receipt_pdf)
                 else:
                     logger.warning("❌ No matching receipt found in Outlook")
                     not_matched_count += 1

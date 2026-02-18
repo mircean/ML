@@ -14,6 +14,7 @@ This application automatically finds airline expense receipts in Outlook emails 
 - **`concur_client.py`**: Pure API client for Concur operations
   - `get_active_expense_reports()` - fetches expense reports
   - `get_expenses(report_id)` - fetches expenses for a specific report
+  - `upload_receipt_image(entry_id, image_data)` - uploads receipt to expense entry via Image v1 API
   - `_make_request()` - handles authenticated API requests
   - **Does NOT contain business logic** - only API interactions
 
@@ -64,8 +65,12 @@ This application automatically finds airline expense receipts in Outlook emails 
    - Search Outlook emails from Amex travel with PDF attachments
    - Parse PDFs with Azure Form Recognizer
    - Match invoice amounts and dates to expense
-   - Report matches and mismatches
+   - Upload matched receipt to Concur (unless `--dry-run`)
 5. Display statistics (total expenses, matched, not matched)
+
+### CLI Options
+
+- `--dry-run` - Find and match receipts but do not upload them to Concur
 
 ### Dependencies
 
@@ -79,7 +84,7 @@ This application automatically finds airline expense receipts in Outlook emails 
 - `CONCUR_CLIENT_ID` - OAuth client ID
 - `CONCUR_CLIENT_SECRET` - OAuth client secret
 - `CONCUR_BASE_URL` - API base URL (default: https://us2.api.concursolutions.com)
-- `CONCUR_SCOPE` - OAuth scopes (default: openid profile user.read identity.user.ids.read expense.report.read)
+- `CONCUR_SCOPE` - OAuth scopes (default: openid profile user.read identity.user.ids.read expense.report.read IMAGE)
 - `REDIRECT_URI` - OAuth callback (default: http://localhost:53682/callback)
 
 **Microsoft Graph API:**

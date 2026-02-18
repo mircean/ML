@@ -99,7 +99,7 @@ class ConcurAuthenticator:
         client_secret: str,
         base_url: str,
         redirect_uri: str = "http://localhost:53682/callback",
-        scope: str = "openid profile user.read identity.user.ids.read expense.report.read",
+        scope: str = "openid profile user.read identity.user.ids.read expense.report.read IMAGE EXPRPT",
     ):
         """
         Initialize Concur authenticator with OAuth 2.0 PKCE flow.
