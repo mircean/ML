@@ -100,13 +100,11 @@ function Add-ToLocalAdmins {
       # Check if the user exists in the system
       $user = Get-LocalUser -Name $email -ErrorAction SilentlyContinue
       if (-not $user) {
-        Write-Host "  Microsoft Account not found in local users. Attempting to add..." -ForegroundColor Yellow
-        # Try to add as a Microsoft Account user
-        $result = cmd /c "net user `"$email`" /add /domain 2>&1"
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "  Note: Microsoft Account may need to be linked through Windows Settings first." -ForegroundColor Yellow
-          Write-Host "  Go to: Settings → Accounts → Your info → Sign in with a Microsoft account" -ForegroundColor Yellow
-        }
+        Write-Host "  '$email' not found on this machine." -ForegroundColor Yellow
+        Write-Host "  Opening Settings -> Accounts -> Other users..." -ForegroundColor Yellow
+        Start-Process "ms-settings:otherusers"
+        Write-Host "  Add '$email' via 'Add someone else to this PC', then press Enter to continue..." -ForegroundColor Yellow
+        Read-Host | Out-Null
       }
       
       # Now try to add to Administrators group
@@ -142,15 +140,14 @@ function Add-ToLocalAdmins {
 Add-ToLocalAdmins -AccountName "MicrosoftAccount\mircean@outlook.com"
 Add-ToLocalAdmins -AccountName "MicrosoftAccount\tate@nwfamilydental.net"
 
-<#
 # Create and configure local user
 $opUsername = "op"
-$opPassword = "password"
+$opPassword = "Family$"
 $opUser = Get-LocalUser -Name $opUsername -ErrorAction SilentlyContinue
 if (-not $opUser) {
   $securePassword = ConvertTo-SecureString $opPassword -AsPlainText -Force
   New-LocalUser -Name $opUsername -Password $securePassword -AccountNeverExpires `
-    -UserMayNotChangePassword:$false -PasswordNeverExpires:$false -ErrorAction Stop
+    -UserMayNotChangePassword:$false -PasswordNeverExpires:$true -ErrorAction Stop
   Write-Host "  Created local user '$opUsername' with password '$opPassword'." -ForegroundColor Green
 } else {
   Write-Host "  Local user '$opUsername' already exists." -ForegroundColor DarkGray
@@ -158,7 +155,6 @@ if (-not $opUser) {
 
 # Add local user to Administrators
 Add-ToLocalAdmins -AccountName $opUsername
-#>
 
 # --- 6) Enable Remote Desktop --------------------------------------------------
 Write-Host "Enabling Remote Desktop and firewall rules..." -ForegroundColor Cyan
@@ -185,6 +181,3 @@ Write-Host "Run once now to cache creds (optional): `"$startupCmd`"" -Foreground
 
 # --- summary -------------------------------------------------------------------
 Write-Host "`nAll requested steps attempted." -ForegroundColor Green
-Write-Host "Notes:" -ForegroundColor Yellow
-Write-Host " • Local user 'op' was created with password 'password' and added to Administrators." -ForegroundColor Yellow
-Write-Host " • If 'tate' is domain/Entra, replace MicrosoftAccount\\tate@... with 'nwfamilydental\\tate' and re-run Add-ToLocalAdmins." -ForegroundColor Yellow
