@@ -149,3 +149,94 @@ class ConcurClient:
         )
 
         logger.info(f"Expense entry {entry_id} saved successfully")
+
+    def _get_user_id(self) -> str:
+        """Get the current user's UUID from the profile API. Cached after first call."""
+        if not hasattr(self, "_user_id"):
+            data = self._make_request("GET", "/profile/v1/me")
+            self._user_id = data["id"]
+            logger.info(f"Resolved user ID: {self._user_id}")
+        return self._user_id
+
+    def get_expense_v4(self, report_id: str, expense_id: str) -> Dict[str, Any]:
+        """
+        Get detailed expense data via the v4 Expense Reports API.
+
+        The v4 API returns fields not available in v3, including
+        travel.hotelCheckinDate and travel.hotelCheckoutDate.
+
+        Args:
+            report_id: The expense report ID
+            expense_id: The ExpenseID (not the v3 entry ID)
+
+        Returns:
+            Expense detail dictionary
+        """
+        user_id = self._get_user_id()
+        endpoint = (
+            f"/expensereports/v4/users/{user_id}/context/TRAVELER"
+            f"/reports/{report_id}/expenses/{expense_id}"
+        )
+        return self._make_request("GET", endpoint)
+
+    def get_itemizations(self, entry_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all itemizations for an expense entry.
+
+        Args:
+            entry_id: The expense entry ID
+
+        Returns:
+            List of itemization dictionaries
+        """
+        logger.info(f"Fetching itemizations for entry {entry_id}")
+        itemizations = self._get_all_items(
+            "/api/v3.0/expense/itemizations", {"entryID": entry_id, "limit": 100}
+        )
+        logger.info(f"Found {len(itemizations)} itemizations for entry {entry_id}")
+        return itemizations
+
+    def create_itemization(
+        self,
+        entry_id: str,
+        expense_type_code: str,
+        transaction_date: str,
+        transaction_amount: float,
+    ) -> Dict[str, Any]:
+        """
+        Create an itemization for an expense entry.
+
+        Args:
+            entry_id: The parent expense entry ID
+            expense_type_code: Expense type code (e.g., "LODNG")
+            transaction_date: Date in YYYY-MM-DD format
+            transaction_amount: Amount for this itemization
+
+        Returns:
+            Response dict with ID and URI of created itemization
+        """
+        url = f"{self.base_url}/api/v3.0/expense/itemizations"
+        headers = self.authenticator.get_auth_headers()
+        headers["Content-Type"] = "application/json"
+
+        payload = {
+            "EntryID": entry_id,
+            "ExpenseTypeCode": expense_type_code,
+            "TransactionDate": transaction_date,
+            "TransactionAmount": transaction_amount,
+        }
+
+        logger.info(
+            f"Creating itemization for entry {entry_id}: "
+            f"{expense_type_code} {transaction_date} ${transaction_amount}"
+        )
+
+        response = requests.post(url, headers=headers, json=payload)
+
+        assert response.status_code in (200, 201), (
+            f"Itemization creation failed with status {response.status_code}: {response.text}"
+        )
+
+        result = response.json()
+        logger.info(f"Itemization created: {result.get('ID', 'unknown')}")
+        return result
