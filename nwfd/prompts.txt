@@ -1,0 +1,25 @@
+=== Prompt 1 — Windows Terminal ===
+Install Microsoft Windows Terminal via winget (accept source and package agreements; continue if it's already installed). Then set it as the default console host: under registry key HKCU:\Console, set DelegationConsole and DelegationTerminal to the Windows Terminal package's PackageFamilyName + "!App", and set ForceV2 = 1.
+
+=== Prompt 2 — Set active network to Private ===
+Find the active network connection (the one whose IPv4 connectivity is not "Disconnected") and set its NetworkCategory to Private. If no active network profile is found, skip and report it.
+
+=== Prompt 3 — Enable Ping (ICMPv4) on Private ===
+Enable the Windows Firewall rule "File and Printer Sharing (Echo Request - ICMPv4-In)" so the machine responds to ping. If that specific rule can't be enabled, fall back to enabling the whole "File and Printer Sharing" display group. Then take all enabled "File and Printer Sharing" rules and scope them to the Private profile. Requires an elevated (administrator) shell.
+
+=== Prompt 4 — Power settings (AC) ===
+Configure power settings for AC (plugged in): turn the screen off after 10 minutes and put the machine to sleep after 30 minutes (powercfg -x -monitor-timeout-ac 10 and -standby-timeout-ac 30). Then disable "require a password/sign-in on wake" best-effort by setting CONSOLELOCK to 0 for both AC and DC on the current scheme and activating it (powercfg /SETACVALUEINDEX and /SETDCVALUEINDEX with SCHEME_CURRENT SUB_NONE CONSOLELOCK 0, then /SETACTIVE SCHEME_CURRENT). Note this may be overridden by Group Policy. Requires an elevated (administrator) shell.
+
+=== Prompt 5 — Users & local Administrators ===
+Add the following Microsoft accounts to the local Administrators group: mircean@outlook.com and tate@nwfamilydental.net. For each, if the account isn't present on the machine, note that it may need to be linked first via Settings > Accounts > Other users ("Add someone else to this PC"), then add it to Administrators (e.g. net localgroup administrators "<email>" /add). Treat "already a member" as success.
+Then create a local user named "op" with password "Family$", set to never expire and password never expires, and add "op" to the local Administrators group. If "op" already exists, leave it and just ensure it's an administrator. Requires an elevated (administrator) shell.
+
+=== Prompt 6 — Enable Remote Desktop ===
+Enable Remote Desktop: set the registry value fDenyTSConnections to 0 under HKLM:\System\CurrentControlSet\Control\Terminal Server, and enable the "Remote Desktop" firewall display group. Requires an elevated (administrator) shell.
+
+=== Prompt 7 — Startup script for IPC$ connections ===
+Create a startup script that maps the IPC$ share on boot. In the all-users StartUp folder (%ProgramData%\Microsoft\Windows\Start Menu\Programs\StartUp), create startup.cmd (creating the folder if needed) containing:
+  @echo off
+  REM Map IPC$ with saved credentials (prompts first run, then stored).
+  net use \\server\ipc$ /savecred /persistent:yes
+Write the file as ASCII. Then run it once now to cache credentials. Requires an elevated (administrator) shell.
